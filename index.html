@@ -140,14 +140,287 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
 .fy-tab.active{background:var(--accent);border-color:var(--accent);color:#fff;}
 .fy-tab:hover:not(.active){border-color:var(--accent);color:var(--accent);}
 </style>
+
+<style>
+/* ── ROUTER OVERLAY PAGES ─────────────────────────────────────────── */
+.router-page{position:fixed;inset:0;z-index:9999;display:none;
+  font-family:'Segoe UI',system-ui,sans-serif;background:#f8f7f4;}
+.router-page.active{display:flex;}
+
+/* Login */
+#pg-login{align-items:center;justify-content:center;background:var(--sidebar,#16213e);}
+.login-card{background:#fff;border-radius:14px;padding:48px;max-width:400px;
+  width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3);text-align:center;}
+.login-logo{width:64px;height:64px;background:#2e6b9e;border-radius:16px;
+  display:flex;align-items:center;justify-content:center;font-size:28px;
+  font-weight:900;color:#fff;margin:0 auto 16px;}
+.login-brand{font-size:10px;font-weight:700;letter-spacing:2px;
+  text-transform:uppercase;color:#7a7a8a;margin-bottom:4px;}
+.login-title{font-size:22px;font-weight:800;color:#1a1a2e;margin-bottom:6px;}
+.login-sub{font-size:13px;color:#7a7a8a;margin-bottom:32px;line-height:1.5;}
+.google-btn{display:flex;align-items:center;justify-content:center;gap:12px;
+  width:100%;padding:13px 20px;border:1.5px solid #e0ddd6;border-radius:8px;
+  background:#fff;font-size:14px;font-weight:600;color:#1a1a2e;cursor:pointer;
+  transition:all .15s;text-decoration:none;}
+.google-btn:hover{background:#f8f7f4;border-color:#a0aec0;
+  box-shadow:0 2px 8px rgba(0,0,0,.08);}
+.login-note{font-size:11px;color:#7a7a8a;margin-top:24px;
+  padding-top:20px;border-top:1px solid #e0ddd6;line-height:1.6;}
+
+/* Upload */
+#pg-upload{align-items:center;justify-content:center;flex-direction:column;
+  background:#f8f7f4;}
+.upload-topbar{position:fixed;top:0;left:0;right:0;height:54px;
+  background:#16213e;display:flex;align-items:center;justify-content:space-between;
+  padding:0 28px;z-index:10;}
+.upload-topbar-title{font-size:14px;font-weight:700;color:#fff;}
+.upload-topbar-sub{font-size:11px;color:#8892b0;}
+.upload-logo{width:30px;height:30px;background:#2e6b9e;border-radius:6px;
+  display:flex;align-items:center;justify-content:center;font-weight:800;
+  font-size:12px;color:#fff;margin-right:12px;}
+.user-pill{background:#0f3460;border-radius:100px;padding:5px 12px;
+  font-size:11px;color:#8892b0;display:flex;align-items:center;gap:6px;}
+.udot{width:7px;height:7px;border-radius:50%;background:#1a7a4a;}
+.upload-main{flex:1;display:flex;align-items:center;justify-content:center;
+  padding:86px 16px 32px;width:100%;}
+.upload-card{background:#fff;border:1px solid #e0ddd6;border-radius:12px;
+  padding:40px 44px;width:100%;max-width:500px;
+  box-shadow:0 4px 24px rgba(0,0,0,.06);}
+.brand-chip{display:inline-flex;align-items:center;gap:8px;background:#16213e;
+  color:#ccd6f6;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;}
+.month-chip{display:inline-flex;align-items:center;background:#fef3e2;
+  color:#b7600d;border-radius:6px;padding:5px 12px;font-size:12px;
+  font-weight:700;margin-left:8px;}
+.uc-h2{font-size:20px;font-weight:700;margin:18px 0 4px;}
+.uc-sub{font-size:13px;color:#7a7a8a;margin-bottom:28px;}
+.dropzone{border:2px dashed #e0ddd6;border-radius:10px;padding:36px 24px;
+  text-align:center;cursor:pointer;transition:all .2s;position:relative;
+  margin-bottom:16px;}
+.dropzone:hover,.dropzone.drag{border-color:#2e6b9e;background:#eaf2fa;}
+.dropzone.ready{border-color:#1a7a4a;background:#e6f4ed;border-style:solid;}
+.dropzone input{position:absolute;inset:0;opacity:0;cursor:pointer;
+  width:100%;height:100%;}
+.dz-icon{font-size:38px;margin-bottom:10px;display:block;}
+.dz-fname{font-size:12px;font-weight:600;color:#1a7a4a;margin-top:6px;}
+.ubtn{width:100%;padding:13px;border-radius:8px;font-size:14px;font-weight:700;
+  cursor:pointer;border:none;background:#2e6b9e;color:#fff;transition:all .15s;}
+.ubtn:hover{background:#1e5280;}
+.ubtn:disabled{background:#a0aec0;cursor:not-allowed;}
+.sbox{border-radius:8px;padding:12px 16px;font-size:13px;
+  margin-top:14px;display:none;line-height:1.5;}
+.sbox.ok{background:#e6f4ed;border:1px solid #9ae6b4;color:#1a7a4a;display:block;}
+.sbox.err{background:#fdeaea;border:1px solid #fc8181;color:#c0392b;display:block;}
+.sbox.wait{background:#f8f7f4;border:1px solid #e0ddd6;color:#7a7a8a;
+  display:flex;align-items:center;gap:10px;}
+.prev-sec{margin-top:24px;border-top:1px solid #e0ddd6;padding-top:18px;}
+.prev-title{font-size:10px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.8px;color:#7a7a8a;margin-bottom:10px;}
+.prev-item{display:flex;justify-content:space-between;padding:8px 12px;
+  background:#fafaf8;border-radius:6px;margin-bottom:6px;font-size:12px;}
+.v-tag{background:#2e6b9e;color:#fff;border-radius:4px;
+  padding:2px 7px;font-size:10px;font-weight:700;margin-left:6px;}
+
+/* Processor */
+#pg-processor{flex-direction:column;background:#f8f7f4;}
+.proc-topbar{height:54px;background:#16213e;display:flex;align-items:center;
+  justify-content:space-between;padding:0 28px;flex-shrink:0;}
+.proc-title{font-size:14px;font-weight:700;color:#fff;}
+.proc-sub{font-size:11px;color:#8892b0;}
+.proc-content{flex:1;padding:22px 28px;overflow-y:auto;}
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;}
+.kc{background:#fff;border:1px solid #e0ddd6;border-radius:8px;padding:14px 16px;}
+.kl{font-size:10px;font-weight:700;text-transform:uppercase;
+  letter-spacing:1px;color:#7a7a8a;margin-bottom:6px;}
+.kv{font-size:28px;font-weight:800;font-family:'Courier New',monospace;}
+.kv.g{color:#1a7a4a;} .kv.a{color:#b7600d;} .kv.r{color:#c0392b;}
+.ks{font-size:11px;color:#7a7a8a;margin-top:2px;}
+.ppanel{background:#fff;border:1px solid #e0ddd6;border-radius:8px;
+  margin-bottom:16px;overflow:hidden;}
+.pph{padding:12px 18px;border-bottom:1px solid #e0ddd6;
+  display:flex;align-items:center;justify-content:space-between;}
+.ppt{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;}
+.ppb{padding:16px 18px;}
+.brand-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:8px;}
+.bc{border:1.5px solid #e0ddd6;border-radius:7px;padding:10px 12px;}
+.bc.up{border-color:#1a7a4a;background:#e6f4ed;}
+.bc.miss{opacity:.65;}
+.bc-name{font-size:12px;font-weight:700;margin-bottom:2px;}
+.bc-st{font-size:11px;}
+.bc.up .bc-st{color:#1a7a4a;}
+.bc.miss .bc-st{color:#7a7a8a;}
+.bc-meta{font-size:10px;color:#7a7a8a;margin-top:2px;}
+.prog-wrap{background:#e0ddd6;border-radius:100px;height:7px;
+  margin:10px 0;overflow:hidden;}
+.prog-bar{height:100%;border-radius:100px;background:#1a7a4a;transition:width .4s;}
+.pbtn{padding:7px 16px;border-radius:6px;font-size:12px;font-weight:700;
+  cursor:pointer;border:none;transition:all .15s;}
+.pbtn-p{background:#2e6b9e;color:#fff;}
+.pbtn-p:hover{background:#1e5280;}
+.pbtn-p:disabled{background:#a0aec0;cursor:not-allowed;}
+.pbtn-o{background:transparent;border:1.5px solid #2e6b9e;color:#2e6b9e;}
+.pbtn-o:hover{background:#eaf2fa;}
+.pbtn-g{background:#1a7a4a;color:#fff;}
+.pbtn-g:hover{filter:brightness(1.1);}
+.step-row{display:flex;align-items:center;gap:16px;padding:12px 0;
+  border-bottom:1px solid #e0ddd6;}
+.step-row:last-child{border-bottom:none;}
+.step-num{width:28px;height:28px;border-radius:50%;background:#2e6b9e;
+  color:#fff;display:flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:700;flex-shrink:0;}
+.step-num.done{background:#1a7a4a;}
+.step-num.pend{background:#e0ddd6;color:#7a7a8a;}
+.step-info{flex:1;}
+.step-title{font-size:13px;font-weight:600;margin-bottom:2px;}
+.step-desc{font-size:11px;color:#7a7a8a;}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid #e0ddd6;
+  border-top-color:#2e6b9e;border-radius:50%;
+  animation:rtspin .7s linear infinite;vertical-align:middle;margin-right:6px;}
+@keyframes rtspin{to{transform:rotate(360deg)}}
+/* Switch to processor link */
+.switch-link{font-size:11px;color:#8892b0;cursor:pointer;
+  text-decoration:underline;background:none;border:none;padding:0;}
+.switch-link:hover{color:#ccd6f6;}
+</style>
 </head>
 <body>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- ROUTER — LOGIN PAGE                                                 -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="router-page" id="pg-login">
+  <div class="login-card">
+    <div class="login-logo">G</div>
+    <div class="login-brand">GBL Finance</div>
+    <div class="login-title">Cash Flow Consolidation</div>
+    <p class="login-sub">Monthly cash flow upload and consolidation portal for GBL portfolio brands.</p>
+    <a class="google-btn" href="/auth/google" id="login-btn">
+      <svg width="20" height="20" viewBox="0 0 48 48">
+        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.35-8.16 2.35-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+      </svg>
+      Sign in with Google
+    </a>
+    <div class="login-note">
+      Restricted to <strong>@goatbrandlabs.com</strong> accounts.<br>
+      Brand users → upload portal &nbsp;·&nbsp; Finance team → processor dashboard.
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- ROUTER — BRAND UPLOAD PAGE                                          -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="router-page" id="pg-upload">
+  <div class="upload-topbar">
+    <div style="display:flex;align-items:center">
+      <div class="upload-logo">G</div>
+      <div>
+        <div class="upload-topbar-title">GBL Cash Flow Consolidation</div>
+        <div class="upload-topbar-sub">Brand File Upload Portal</div>
+      </div>
+    </div>
+    <div class="user-pill"><div class="udot"></div><span id="rt-user-email">—</span></div>
+  </div>
+  <div class="upload-main">
+    <div class="upload-card">
+      <div>
+        <span class="brand-chip">🏷 <span id="rt-brand-name">Loading...</span></span>
+        <span class="month-chip" id="rt-month-chip">—</span>
+      </div>
+      <div class="uc-h2">Upload Cash Flow File</div>
+      <p class="uc-sub">Upload your brand's monthly cash flow file for GBL consolidation.</p>
+      <div class="dropzone" id="rt-dz"
+        ondragover="event.preventDefault();this.classList.add('drag')"
+        ondragleave="this.classList.remove('drag')"
+        ondrop="rtDrop(event)">
+        <input type="file" id="rt-fi" accept=".xlsx,.xls,.xlsb" onchange="rtFile(this.files[0])">
+        <span class="dz-icon" id="rt-dz-icon">📂</span>
+        <div style="font-size:14px;font-weight:600;margin-bottom:4px" id="rt-dz-label">Drop file here or click to browse</div>
+        <div style="font-size:12px;color:#7a7a8a" id="rt-dz-hint">Accepts .xlsx · .xls · .xlsb</div>
+        <div class="dz-fname" id="rt-dz-fname"></div>
+      </div>
+      <button class="ubtn" id="rt-ubtn" disabled onclick="rtUpload()">Upload File</button>
+      <div class="sbox" id="rt-sbox"></div>
+      <div class="prev-sec" id="rt-prev" style="display:none">
+        <div class="prev-title">Previous uploads this month</div>
+        <div id="rt-prev-list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- ROUTER — PROCESSOR DASHBOARD                                        -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="router-page" id="pg-processor">
+  <div class="proc-topbar">
+    <div style="display:flex;align-items:center;gap:12px">
+      <div class="upload-logo">G</div>
+      <div>
+        <div class="proc-title">GBL Cash Flow Consolidation — Processor Dashboard</div>
+        <div class="proc-sub">Manage brand uploads and run consolidation</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="user-pill"><div class="udot"></div><span id="rt-proc-email">—</span></div>
+      <button class="pbtn pbtn-o" style="border-color:rgba(255,255,255,.3);color:#ccd6f6" onclick="rtRefreshStatus()">↻ Refresh</button>
+      <button class="switch-link" onclick="rtShowPage('cff')">Open CFF Tool →</button>
+    </div>
+  </div>
+  <div class="proc-content">
+    <!-- KPIs -->
+    <div class="kpi-row">
+      <div class="kc"><div class="kl">Month</div><div class="kv" id="rt-k-month" style="font-size:18px;padding-top:6px">—</div></div>
+      <div class="kc"><div class="kl">Uploaded</div><div class="kv g" id="rt-k-up">—</div><div class="ks">of 21 brands</div></div>
+      <div class="kc"><div class="kl">Pending</div><div class="kv a" id="rt-k-miss">—</div><div class="ks">awaiting upload</div></div>
+      <div class="kc"><div class="kl">Status</div><div class="kv" id="rt-k-status" style="font-size:15px;padding-top:8px">—</div></div>
+    </div>
+
+    <!-- Brand grid -->
+    <div class="ppanel">
+      <div class="pph">
+        <div class="ppt">Brand Upload Status — <span id="rt-ph-month">—</span></div>
+        <div style="font-size:11px;color:#7a7a8a" id="rt-refresh-time">—</div>
+      </div>
+      <div class="ppb">
+        <div class="prog-wrap"><div class="prog-bar" id="rt-prog" style="width:0%"></div></div>
+        <div class="brand-grid" id="rt-brand-grid"><div style="color:#7a7a8a;font-size:13px">Loading...</div></div>
+      </div>
+    </div>
+
+    <!-- Process steps -->
+    <div class="ppanel">
+      <div class="pph"><div class="ppt">Process Files</div></div>
+      <div class="ppb">
+        <div class="step-row">
+          <div class="step-num" id="rt-s1-num">1</div>
+          <div class="step-info">
+            <div class="step-title">Load brand files from Google Drive</div>
+            <div class="step-desc" id="rt-s1-desc">Fetches all uploaded brand files for this month</div>
+          </div>
+          <button class="pbtn pbtn-p" id="rt-s1-btn" onclick="rtLoadFiles()">Load Files</button>
+        </div>
+        <div class="step-row">
+          <div class="step-num pend" id="rt-s2-num">2</div>
+          <div class="step-info">
+            <div class="step-title">Open CFF Consolidation Tool</div>
+            <div class="step-desc">Map, recon, IC check, other line items, bake in</div>
+          </div>
+          <button class="pbtn pbtn-g" id="rt-s2-btn" disabled onclick="rtOpenCFF()">Open CFF Tool →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 
 <div class="sidebar">
   <div class="sb-logo">
     <div class="sb-brand">GBL Finance</div>
     <div class="sb-title">Cash Flow<br>Consolidation</div>
-    <div class="sb-sub">FY22 → FY27 · Built 10-Jul-2026 05:29</div>
+    <div class="sb-sub">FY22 → FY27 · Built 10-Jul-2026 07:28</div>
   </div>
   <div class="sb-nav">
     <div class="nav-sec">FY27 Workflow</div>
@@ -2497,6 +2770,231 @@ function fmtS(v){const a=Math.abs(v);return a>=1e7?`₹${(v/1e7).toFixed(1)}Cr`:
 
 init();
 populateFilters();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ROUTER — Single URL, three views
+// ═══════════════════════════════════════════════════════════════════════════
+const RT = {
+  // ── API endpoints — swap these when EC2 is ready ──────────────────────
+  API: {
+    me:     '/api/me',
+    status: '/api/upload-status',
+    upload: '/api/upload',
+    files:  '/api/get-files',
+  },
+  // ── Brand-to-email map — fill in actual emails ─────────────────────────
+  BRAND_MAP: {
+    'abhishti.finance@goatbrandlabs.com':    'Abhishti',
+    'breakbounce.finance@goatbrandlabs.com': 'Break Bounce',
+    'chumbak.finance@goatbrandlabs.com':     'Chumbak',
+    'frangipani.finance@goatbrandlabs.com':  'Frangipani',
+    'gblantares.finance@goatbrandlabs.com':  'GBL Antares',
+    'gblgarden.finance@goatbrandlabs.com':   'GBL Garden',
+    'gblindia.finance@goatbrandlabs.com':    'GBL India',
+    'gblmimosa.finance@goatbrandlabs.com':   'GBL Mimosa',
+    'gblpollux.finance@goatbrandlabs.com':   'GBL Pollux',
+    'gblsingapore.finance@goatbrandlabs.com':'GBL Singapore',
+    'gblsirius.finance@goatbrandlabs.com':   'GBL Sirius',
+    'imara.finance@goatbrandlabs.com':       'Imara',
+    'leafytales.finance@goatbrandlabs.com':  'Leafy Tales',
+    'neemli.finance@goatbrandlabs.com':      'Neemli',
+    'nutriglow.finance@goatbrandlabs.com':   'Nutriglow',
+    'petedge.finance@goatbrandlabs.com':     'Pet Edge',
+    'pepe.finance@goatbrandlabs.com':        'Pepe',
+    'tll.finance@goatbrandlabs.com':         'TLL',
+    'truebrowns.finance@goatbrandlabs.com':  'trueBrowns',
+    'voylla.finance@goatbrandlabs.com':      'Voylla',
+    'yuris.finance@goatbrandlabs.com':       'Yuris',
+    // Processor emails
+    'sangeetha.v@goatbrandlabs.com':         '__PROCESSOR__',
+    // Add second processor here when needed:
+    // 'finance2@goatbrandlabs.com': '__PROCESSOR__',
+  },
+  PROCESSOR_EMAILS: ['sangeetha.v@goatbrandlabs.com'],
+  ALL_BRANDS: ['Abhishti','Break Bounce','Chumbak','Frangipani','GBL Antares',
+    'GBL Garden','GBL India','GBL Mimosa','GBL Pollux','GBL Singapore','GBL Sirius',
+    'Imara','Leafy Tales','Neemli','Nutriglow','Pet Edge','Pepe','TLL',
+    'trueBrowns','Voylla','Yuris'],
+  user: null,
+  loadedFiles: [],
+  statusData: {},
+  selectedFile: null,
+};
+
+// ── Show/hide pages ───────────────────────────────────────────────────────
+function rtShowPage(page) {
+  ['pg-login','pg-upload','pg-processor'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('active', false);
+  });
+  // CFF tool = remove all overlays (show the underlying dashboard)
+  if (page === 'cff') return;
+  const el = document.getElementById('pg-' + page);
+  if (el) el.classList.add('active');
+}
+
+// ── Init: check login state ───────────────────────────────────────────────
+async function rtInit() {
+  try {
+    const res  = await fetch(RT.API.me, {credentials:'include'});
+    const user = await res.json();
+    RT.user = user;
+    if (user.role === 'processor') {
+      document.getElementById('rt-proc-email').textContent = user.email;
+      rtShowPage('processor');
+      rtRefreshStatus();
+    } else if (user.role === 'brand') {
+      document.getElementById('rt-user-email').textContent = user.email;
+      document.getElementById('rt-brand-name').textContent = user.brand;
+      document.getElementById('rt-month-chip').textContent = CONSOLIDATION_MONTH;
+      rtShowPage('upload');
+      rtLoadUploadHistory();
+    } else {
+      rtShowPage('login');
+    }
+  } catch(e) {
+    // No backend yet — show CFF dashboard directly (current behaviour)
+    // Comment this out once EC2 is ready and uncomment rtShowPage('login')
+    rtShowPage('cff');
+    // rtShowPage('login');
+  }
+}
+
+// ── UPLOAD PAGE ───────────────────────────────────────────────────────────
+function rtDrop(e) {
+  e.preventDefault();
+  document.getElementById('rt-dz').classList.remove('drag');
+  rtFile(e.dataTransfer.files[0]);
+}
+function rtFile(f) {
+  if (!f) return;
+  if (!/\.(xlsx|xls|xlsb)$/i.test(f.name)) {
+    rtStatus('Please select an Excel file (.xlsx / .xls / .xlsb)', 'err'); return;
+  }
+  RT.selectedFile = f;
+  document.getElementById('rt-dz').classList.add('ready');
+  document.getElementById('rt-dz-icon').textContent  = '✅';
+  document.getElementById('rt-dz-label').textContent = 'File selected';
+  document.getElementById('rt-dz-hint').textContent  = '';
+  document.getElementById('rt-dz-fname').textContent = f.name;
+  document.getElementById('rt-ubtn').disabled = false;
+  rtStatus('','');
+}
+async function rtUpload() {
+  if (!RT.selectedFile) return;
+  const btn = document.getElementById('rt-ubtn');
+  btn.disabled = true; btn.textContent = 'Uploading...';
+  rtStatus('<span class="spin"></span> Uploading to Google Drive — please wait...', 'wait');
+  try {
+    const fd = new FormData();
+    fd.append('file', RT.selectedFile);
+    const d = await (await fetch(RT.API.upload,{method:'POST',body:fd,credentials:'include'})).json();
+    if (d.success) {
+      rtStatus(`✓ Uploaded as <strong>${d.fileName}</strong><br>Finance team has been notified.`, 'ok');
+      btn.textContent = '✓ Uploaded';
+      RT.selectedFile = null;
+      document.getElementById('rt-dz').className = 'dropzone';
+      document.getElementById('rt-dz-icon').textContent  = '📂';
+      document.getElementById('rt-dz-label').textContent = 'Drop file here or click to browse';
+      document.getElementById('rt-dz-hint').textContent  = 'Accepts .xlsx · .xls · .xlsb';
+      document.getElementById('rt-dz-fname').textContent = '';
+      document.getElementById('rt-fi').value = '';
+      rtLoadUploadHistory();
+    } else throw new Error(d.error || 'Upload failed');
+  } catch(e) {
+    rtStatus('Upload failed: ' + e.message, 'err');
+    btn.disabled = false; btn.textContent = 'Upload File';
+  }
+}
+function rtStatus(html, type) {
+  const el = document.getElementById('rt-sbox');
+  el.innerHTML = html;
+  el.className = 'sbox' + (type ? ' ' + type : '');
+}
+async function rtLoadUploadHistory() {
+  try {
+    const s = await (await fetch(RT.API.status,{credentials:'include'})).json();
+    const brand = RT.user?.brand;
+    const info  = s.uploaded?.[brand];
+    if (info) {
+      document.getElementById('rt-prev').style.display = '';
+      document.getElementById('rt-prev-list').innerHTML =
+        `<div class="prev-item"><span>${info.fileName}<span class="v-tag">V${info.version}</span></span>
+         <span style="color:#7a7a8a">${info.date}</span></div>`;
+    }
+  } catch(e) {}
+}
+
+// ── PROCESSOR PAGE ────────────────────────────────────────────────────────
+async function rtRefreshStatus() {
+  document.getElementById('rt-refresh-time').textContent = 'Refreshing...';
+  try {
+    const data = await (await fetch(RT.API.status,{credentials:'include'})).json();
+    RT.statusData = data;
+    rtRenderStatus(data);
+  } catch(e) {
+    rtRenderStatus({month: CONSOLIDATION_MONTH, uploaded:{}, total:21});
+  }
+  document.getElementById('rt-refresh-time').textContent =
+    'Updated ' + new Date().toLocaleTimeString('en-IN');
+}
+function rtRenderStatus(data) {
+  const {month, uploaded={}, total=21} = data;
+  const upCount = Object.keys(uploaded).length;
+  const missing = total - upCount;
+  const pct = Math.round(upCount/total*100);
+  document.getElementById('rt-k-month').textContent = month;
+  document.getElementById('rt-k-up').textContent    = upCount;
+  document.getElementById('rt-k-miss').textContent  = missing;
+  document.getElementById('rt-ph-month').textContent = month;
+  document.getElementById('rt-prog').style.width = pct + '%';
+  const st = document.getElementById('rt-k-status');
+  if (missing===0){st.textContent='✅ All uploaded';st.style.color='#1a7a4a';}
+  else if(missing<=3){st.textContent='⚠ Almost ready';st.style.color='#b7600d';}
+  else{st.textContent='⏳ Waiting';st.style.color='#c0392b';}
+  document.getElementById('rt-brand-grid').innerHTML = RT.ALL_BRANDS.map(brand => {
+    const info = uploaded[brand];
+    return info
+      ? `<div class="bc up"><div class="bc-name">✓ ${brand}</div>
+         <div class="bc-st">V${info.version} uploaded</div>
+         <div class="bc-meta">${info.date} · ${Math.round(info.size/1024)}KB</div></div>`
+      : `<div class="bc miss"><div class="bc-name">${brand}</div>
+         <div class="bc-st">Not uploaded</div></div>`;
+  }).join('');
+}
+async function rtLoadFiles() {
+  const btn = document.getElementById('rt-s1-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span>Loading...';
+  document.getElementById('rt-s1-desc').textContent = 'Fetching brand files from Google Drive...';
+  try {
+    const files = await (await fetch(RT.API.files,{credentials:'include'})).json();
+    RT.loadedFiles = files;
+    document.getElementById('rt-s1-num').className = 'step-num done';
+    document.getElementById('rt-s1-num').textContent = '✓';
+    btn.textContent = `✓ ${files.length} files loaded`;
+    document.getElementById('rt-s1-desc').textContent =
+      `${files.length} brand files ready`;
+    document.getElementById('rt-s2-num').className = 'step-num';
+    document.getElementById('rt-s2-btn').disabled = false;
+  } catch(e) {
+    document.getElementById('rt-s1-desc').textContent = 'Error: ' + e.message;
+    btn.disabled = false; btn.textContent = 'Retry';
+  }
+}
+function rtOpenCFF() {
+  rtShowPage('cff');
+  // Post files into the CFF tool
+  if (RT.loadedFiles.length) {
+    setTimeout(() => {
+      window.postMessage({type:'GBL_CFF_LOAD_FILES', files:RT.loadedFiles}, '*');
+    }, 500);
+  }
+}
+
+// Start router
+rtInit();
+
 </script>
 
 <!-- CFO Auth Modal -->

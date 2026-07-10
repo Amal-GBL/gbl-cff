@@ -2268,10 +2268,11 @@ function renderReport(){
 
   // Populate from S.consolidated (new uploads)
   S.consolidated.forEach(r=>{
-    if(selBrand!=='ALL'&&r.brand!==selBrand) return;
-    if(!dataLookup[r.brand]) dataLookup[r.brand]={};
-    if(!dataLookup[r.brand][r.month]) dataLookup[r.brand][r.month]={};
-    dataLookup[r.brand][r.month][r.cfLine]=(dataLookup[r.brand][r.month][r.cfLine]||0)+(r.net||0);
+    const brand = r.brand.replace(/__dup__\w+$/, '');
+    if(selBrand!=='ALL'&&brand!==selBrand) return;
+    if(!dataLookup[brand]) dataLookup[brand]={};
+    if(!dataLookup[brand][r.month]) dataLookup[brand][r.month]={};
+    dataLookup[brand][r.month][r.cfLine]=(dataLookup[brand][r.month][r.cfLine]||0)+(r.net||0);
   });
 
   // Closing balance lookup: brand → month → {type → value}
@@ -2295,7 +2296,8 @@ function renderReport(){
   });
   // Merge closing balance from uploaded brand summaries (S.brands[brand].brandSummary)
   // This covers new months not yet in HIST.closing/breakdown
-  Object.entries(S.brands||{}).forEach(([brand,bd])=>{
+  Object.entries(S.brands||{}).forEach(([rawBrand,bd])=>{
+    const brand = rawBrand.replace(/__dup__\w+$/, '');
     if(selBrand!=='ALL'&&brand!==selBrand) return;
     if(!bd.brandSummary) return;
     Object.entries(bd.brandSummary).forEach(([m,lines])=>{

@@ -2535,19 +2535,21 @@ function renderReport(){
   thead.innerHTML=`<tr><th style="min-width:220px;padding:7px 10px;text-align:left;font-size:10px;font-weight:700;${stickyCorner}">Line Item (₹)</th>${hdrCells}</tr>`;
   tbody.innerHTML=rows.join('');
 
-  // Freeze first column via scroll listener
-  const scroller = document.getElementById('rt-scroll');
-  if(scroller){
-    function freezeFirstCol(){
-      const x = scroller.scrollLeft;
-      scroller.querySelectorAll('tr > *:first-child').forEach(cell=>{
-        cell.style.position = 'relative';
-        cell.style.left = x + 'px';
-        cell.style.zIndex = '3';
-      });
-    }
-    scroller.addEventListener('scroll', freezeFirstCol, {passive:true});
+  // Freeze first column — listen on window scroll (page scrolls horizontally)
+  function freezeFirstCol(){
+    const x = window.scrollX;
+    if(x === 0) return;
+    const tbl = document.getElementById('rt-scroll');
+    if(!tbl) return;
+    tbl.querySelectorAll('tr > *:first-child').forEach(cell=>{
+      cell.style.position = 'relative';
+      cell.style.left = x + 'px';
+      cell.style.zIndex = '3';
+    });
   }
+  window.removeEventListener('scroll', window._cffFreeze);
+  window._cffFreeze = freezeFirstCol;
+  window.addEventListener('scroll', freezeFirstCol, {passive:true});
 }
 
 function renderWaterfall(){

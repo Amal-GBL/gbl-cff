@@ -611,7 +611,7 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
           <div class="pt">3-Tier Cash Flow Statement</div>
           <div id="report-period-label" style="font-size:12px;color:var(--muted);"></div>
         </div>
-        <div class="pb scroll-x"><table class="rt" style="min-width:600px;"><thead id="rt-head"></thead><tbody id="rt-body"></tbody></table></div>
+        <div id="rt-scroll" style="overflow-x:auto;overflow-y:visible;padding:0;"><table class="rt" style="min-width:900px;border-collapse:separate;border-spacing:0;"><thead id="rt-head"></thead><tbody id="rt-body"></tbody></table></div>
       </div>
     </div>
 
@@ -2383,7 +2383,7 @@ function renderReport(){
   // ── Column width ──────────────────────────────────────────────────────────
   const nCols=months.length;
   const colW=Math.max(90,Math.min(120,Math.floor(900/Math.max(nCols,1))));
-  const stickyCol='position:sticky;left:0;z-index:2;background:inherit;box-shadow:2px 0 4px rgba(0,0,0,0.08);';
+  const stickyCol='position:sticky;left:0;z-index:2;box-shadow:2px 0 4px rgba(0,0,0,0.08);';
   const stickyHdr='position:sticky;top:46px;z-index:4;background:var(--sidebar);color:#ccd6f6;';
   const stickyCorner='position:sticky;top:46px;left:0;z-index:5;background:var(--sidebar);color:#ccd6f6;';
 
@@ -2924,7 +2924,7 @@ function showPage(page){
     if(nav) nav.classList.toggle('active',p===page);
   });
   const titles={upload:'Upload Brand Files',mapping:'Line Item Mapping',recon:'Reconciliation vs Brand Summary',
-    checks:'Checks & IC Loans',lineitems:'Other Line Items — '+CONSOLIDATION_MONTH,report:'Consolidated Cash Flow Report Test',waterfall:'Cash Waterfall',brands:'Brand Breakdown'};
+    checks:'Checks & IC Loans',lineitems:'Other Line Items — '+CONSOLIDATION_MONTH,report:'Consolidated Cash Flow Report',waterfall:'Cash Waterfall',brands:'Brand Breakdown'};
   document.getElementById('page-title').textContent=titles[page]||page;
   if(page==='report'){populateFilters();renderReport();}
   if(page==='waterfall')renderWaterfall();

@@ -732,7 +732,8 @@ const GH_SYNC = {
   token:  ['ghp_3rUT7VmbOtu','ooNHkTYfNRkKd3Q5R32UcR3L'].join('m'),
   repo:   'Amal-GBL/gbl-cff',
   branch: 'dev',
-  file:   'session.json'
+  file:   'session.json',
+  mapFile:'mapping.json'
 };
 
 const CONSOLIDATION_MONTH = '6-2026';  // Format: M-YYYY
@@ -942,6 +943,65 @@ function saveSession(){
     pushSessionToGitHub(snapshot);
     console.log('Session saved for', CONSOLIDATION_MONTH);
   }catch(e){console.warn('Session save failed:',e);}
+}
+
+// ── Mapping persistence (survives fresh sessions) ────────────────────────────
+async function loadMappingFromGitHub(){
+  try{
+    const hdrs={'Authorization':`Bearer ${GH_SYNC.token}`,'Accept':'application/vnd.github+json'};
+    const base=`https://api.github.com/repos/${GH_SYNC.repo}`;
+    const refR=await fetch(`${base}/git/ref/heads/${GH_SYNC.branch}`,{headers:hdrs});
+    if(!refR.ok) return;
+    const refSha=(await refR.json()).object.sha;
+    const commitR=await fetch(`${base}/git/commits/${refSha}`,{headers:hdrs});
+    const treeSha=(await commitR.json()).tree.sha;
+    const treeR=await fetch(`${base}/git/trees/${treeSha}`,{headers:hdrs});
+    const tree=await treeR.json();
+    const entry=tree.tree.find(t=>t.path===GH_SYNC.mapFile);
+    if(!entry) return;
+    const blobR=await fetch(`${base}/git/blobs/${entry.sha}`,{headers:{...hdrs,'Accept':'application/vnd.github+json'}});
+    const blob=await blobR.json();
+    if(!blob.content) return;
+    const saved=JSON.parse(decodeURIComponent(escape(atob(blob.content.replace(/\n/g,'')))));
+    // Merge saved mappings into S.mapping — only fill gaps, never overwrite current session
+    Object.entries(saved).forEach(([brand,lines])=>{
+      if(!S.mapping[brand]) S.mapping[brand]={};
+      Object.entries(lines).forEach(([grp,val])=>{
+        if(S.mapping[brand][grp]===undefined) S.mapping[brand][grp]=val;
+      });
+    });
+    console.log('Mappings loaded from GitHub for',Object.keys(saved).length,'brands');
+  }catch(e){ console.warn('loadMappingFromGitHub failed:',e); }
+}
+
+async function pushMappingToGitHub(){
+  try{
+    // Save a clean copy: brand → grouping → cfLine (exclude null/structural/ignore)
+    const clean={};
+    Object.entries(S.mapping).forEach(([brand,lines])=>{
+      const kept={};
+      Object.entries(lines).forEach(([grp,val])=>{ if(val&&val!==null) kept[grp]=val; });
+      if(Object.keys(kept).length) clean[brand.replace(/__dup__\w+$/,'')]=kept;
+    });
+    const body=JSON.stringify(clean);
+    const b64=btoa(unescape(encodeURIComponent(body)));
+    const hdrs={'Authorization':`Bearer ${GH_SYNC.token}`,'Accept':'application/vnd.github+json','Content-Type':'application/json'};
+    const base=`https://api.github.com/repos/${GH_SYNC.repo}`;
+    // Get current SHA via tree
+    const refR=await fetch(`${base}/git/ref/heads/${GH_SYNC.branch}`,{headers:hdrs});
+    const refSha=(await refR.json()).object.sha;
+    const commitR=await fetch(`${base}/git/commits/${refSha}`,{headers:hdrs});
+    const treeSha=(await commitR.json()).tree.sha;
+    const newTreeR=await fetch(`${base}/git/trees`,{method:'POST',headers:hdrs,
+      body:JSON.stringify({base_tree:treeSha,tree:[{path:GH_SYNC.mapFile,mode:'100644',type:'blob',content:body}]})});
+    const newTreeSha=(await newTreeR.json()).sha;
+    const newCommitR=await fetch(`${base}/git/commits`,{method:'POST',headers:hdrs,
+      body:JSON.stringify({message:`Mapping update: ${new Date().toISOString().slice(0,10)}`,tree:newTreeSha,parents:[refSha]})});
+    const newCommitSha=(await newCommitR.json()).sha;
+    await fetch(`${base}/git/refs/heads/${GH_SYNC.branch}`,{method:'PATCH',headers:hdrs,
+      body:JSON.stringify({sha:newCommitSha,force:false})});
+    console.log('Mappings saved to GitHub');
+  }catch(e){ console.warn('pushMappingToGitHub failed:',e); }
 }
 
 // ── GitHub Session Sync ───────────────────────────────────────────────────────
@@ -1170,7 +1230,11 @@ function dismissSession(){
   if(banner) banner.style.display='none';
 }
 
-function init(){checkForSavedSession();renderGrid();}
+function init(){
+  checkForSavedSession();
+  loadMappingFromGitHub();  // pre-load saved mappings before any upload
+  renderGrid();
+}
 
 function renderGrid(){
   const g=document.getElementById('upload-grid');
@@ -1220,7 +1284,25 @@ function renderGrid(){
 
 function removeBrand(n){
   const removedDisplay=S.brands[n]?.displayName||n.split('__dup__')[0];
-  delete S.brands[n];delete S.mapping[n];
+  if(!confirm(`Remove ${removedDisplay} from this consolidation?\n\nThis will:\n• Remove all their Jun-26 transactions from the report\n• Keep their mapping for future uploads\n• Allow you to re-upload a corrected file\n\nIC Loan fixes already done will be preserved.`)) return;
+
+  // Purge all consolidated rows for this brand (including any __dup__ variants)
+  const beforeCount=S.consolidated.length;
+  S.consolidated=S.consolidated.filter(r=>{
+    const baseBrand=r.brand.replace(/__dup__\w+$/,'');
+    return baseBrand!==removedDisplay && r.brand!==n;
+  });
+  console.log(`Removed ${beforeCount-S.consolidated.length} consolidated rows for ${removedDisplay}`);
+
+  // Remove from S.brands (keep mapping)
+  delete S.brands[n];
+  // Also remove any __dup__ variants of same brand
+  Object.keys(S.brands).forEach(key=>{
+    if((S.brands[key]?.displayName||key.split('__dup__')[0])===removedDisplay){
+      delete S.brands[key];
+    }
+  });
+
   // Promote orphaned dup to real name if original is now gone
   Object.keys(S.brands).forEach(key=>{
     if(key.includes('__dup__')&&S.brands[key].displayName===removedDisplay){
@@ -1230,8 +1312,17 @@ function removeBrand(n){
       delete S.brands[key];delete S.mapping[key];
     }
   });
+
+  // Re-run consolidation to reflect the removal
+  if(S.consolidated.length>0 || Object.keys(S.brands).length>0){
+    buildRecon();
+    renderCheckUI();renderKPIs();renderReport();renderWaterfall();renderBrands();
+    renderRecon();
+  }
+
   renderGrid();
   document.getElementById('btn-map').disabled=Object.keys(S.brands).length===0;
+  saveSession();
 }
 
 async function handleUpload(e){
@@ -1659,6 +1750,7 @@ function onMapChange(sel){
   // Save this mapping to localStorage immediately
   const displayName=S.brands[brand]?.displayName||brand;
   // Mapping saved in session snapshot via saveSession()
+  pushMappingToGitHub();
   renderGrid();
 }
 

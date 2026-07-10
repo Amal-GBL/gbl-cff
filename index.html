@@ -557,10 +557,6 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
 
     <!-- ── CHECKS ── -->
     <div id="page-checks" class="hidden">
-      <div style="display:flex;justify-content:flex-end;margin-bottom:8px;gap:8px;">
-        <button class="btn btn-o btn-sm" onclick="showPage('mapping')" title="Go back to mapping to remove/re-upload a brand">← Mapping</button>
-        <button class="btn btn-p btn-sm" onclick="requireAuth(()=>{consolidate();showPage('checks');})" title="Re-run consolidation — preserves IC fixes already done">↺ Re-consolidate</button>
-      </div>
       <div class="cg" id="check-grid" style="margin-bottom:14px;"></div>
       <div class="panel">
         <div class="ph"><div class="pt">IC Loans Check — Group Level (Jun-26)</div></div>
@@ -1254,11 +1250,13 @@ function renderGrid(){
     const u=Object.values(m).filter(v=>v===null).length;
     const isDup=d.isDup;
     const displayName=d.displayName||key;
-    const cls=isDup?'uc':u>0?'uc warn':'uc uploaded';
+    const isRestored=!d.rows||d.rows.length===0;
+    const consolidatedCount=isRestored?S.consolidated.filter(r=>r.brand.replace(/__dup__\w+$/,'')===(displayName)).length:0;
+    const cls=isDup?'uc':isRestored?'uc uploaded':u>0?'uc warn':'uc uploaded';
     const border=isDup?'style="border:2px solid var(--red);background:var(--red-light);"':'';
-    const icon=isDup?'⚠️':u>0?'⚠️':'✅';
-    const statusColor=isDup?'var(--red)':u>0?'var(--amber)':'var(--green)';
-    const statusText=isDup?'DUPLICATE — remove one':u>0?u+' unmapped':d.rows.length.toLocaleString()+' rows';
+    const icon=isDup?'⚠️':isRestored?'✓':u>0?'⚠️':'✅';
+    const statusColor=isDup?'var(--red)':isRestored?'var(--green)':u>0?'var(--amber)':'var(--green)';
+    const statusText=isDup?'DUPLICATE — remove one':isRestored?`${consolidatedCount} rows consolidated`:u>0?u+' unmapped':d.rows.length.toLocaleString()+' rows';
     const latestM=d.latestMonth||'—';
     const safeKey=key.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
     h+=`<div class="${cls}" ${border}>

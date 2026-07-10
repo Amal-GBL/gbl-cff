@@ -2121,7 +2121,7 @@ function renderReport(){
       if(!dataLookup[brand]) dataLookup[brand]={};
       if(!dataLookup[brand][month]) dataLookup[brand][month]={};
       Object.entries(lines).forEach(([cfLine,d])=>{
-        dataLookup[brand][month][cfLine]=(dataLookup[brand][month][cfLine]||0)+(d.net||d||0);
+        dataLookup[brand][month][cfLine]=(dataLookup[brand][month][cfLine]||0)+(d!==null&&typeof d==='object'?(d.net??0):(d??0));
       });
     });
   });

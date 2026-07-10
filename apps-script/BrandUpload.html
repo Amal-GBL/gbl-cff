@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GBL CFF — Upload</title>
+<style>
+:root{--ink:#1a1a2e;--paper:#f8f7f4;--rule:#e0ddd6;--accent:#2e6b9e;
+  --green:#1a7a4a;--green-light:#e6f4ed;--red:#c0392b;--red-light:#fdeaea;
+  --amber:#b7600d;--amber-light:#fef3e2;--muted:#7a7a8a;--sidebar:#16213e;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--paper);
+  color:var(--ink);min-height:100vh;display:flex;align-items:center;justify-content:center;}
+.card{background:#fff;border:1px solid var(--rule);border-radius:12px;
+  padding:40px;max-width:480px;width:100%;box-shadow:0 4px 24px rgba(0,0,0,.08);}
+.logo{font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;
+  color:var(--muted);margin-bottom:4px;}
+h1{font-size:22px;font-weight:700;margin-bottom:4px;}
+.sub{font-size:13px;color:var(--muted);margin-bottom:28px;}
+.brand-badge{background:var(--accent);color:#fff;border-radius:6px;
+  padding:8px 16px;font-size:13px;font-weight:700;display:inline-block;margin-bottom:24px;}
+.month-badge{background:var(--amber-light);color:var(--amber);border-radius:6px;
+  padding:6px 14px;font-size:12px;font-weight:700;display:inline-block;margin-bottom:24px;margin-left:8px;}
+.upload-area{border:2px dashed var(--rule);border-radius:8px;padding:32px;
+  text-align:center;transition:all .2s;cursor:pointer;position:relative;margin-bottom:16px;}
+.upload-area:hover,.upload-area.drag{border-color:var(--accent);background:#eaf2fa;}
+.upload-area input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;}
+.upload-icon{font-size:36px;margin-bottom:10px;}
+.upload-label{font-size:14px;font-weight:600;margin-bottom:4px;}
+.upload-hint{font-size:12px;color:var(--muted);}
+.file-chosen{background:var(--green-light);border:2px solid var(--green);
+  border-radius:8px;padding:12px 16px;margin-bottom:16px;
+  display:none;font-size:13px;align-items:center;gap:10px;}
+.file-chosen.show{display:flex;}
+.btn{width:100%;padding:12px;border-radius:8px;font-size:14px;font-weight:700;
+  cursor:pointer;border:none;transition:all .15s;background:var(--accent);color:#fff;}
+.btn:hover{background:#1e5280;}
+.btn:disabled{background:#a0aec0;cursor:not-allowed;}
+.status{margin-top:16px;padding:12px 16px;border-radius:8px;font-size:13px;display:none;}
+.status.ok{background:var(--green-light);color:var(--green);border:1px solid var(--green);display:block;}
+.status.err{background:var(--red-light);color:var(--red);border:1px solid var(--red);display:block;}
+.status.loading{background:#eaf2fa;color:var(--accent);border:1px solid #bee3f8;display:block;}
+.prev-uploads{margin-top:24px;border-top:1px solid var(--rule);padding-top:20px;}
+.prev-title{font-size:11px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.8px;color:var(--muted);margin-bottom:10px;}
+.prev-item{display:flex;justify-content:space-between;align-items:center;
+  padding:8px 0;border-bottom:1px solid var(--rule);font-size:12px;}
+.prev-item:last-child{border-bottom:none;}
+.v-badge{background:var(--accent);color:#fff;border-radius:4px;
+  padding:2px 6px;font-size:10px;font-weight:700;}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">GBL Finance</div>
+  <h1>Cash Flow Upload</h1>
+  <div class="sub">Upload your brand's cash flow file for consolidation</div>
+
+  <div>
+    <span class="brand-badge" id="brand-name">Loading...</span>
+    <span class="month-badge" id="month-name">—</span>
+  </div>
+
+  <div class="upload-area" id="drop-zone"
+    ondragover="event.preventDefault();this.classList.add('drag')"
+    ondragleave="this.classList.remove('drag')"
+    ondrop="handleDrop(event)">
+    <input type="file" id="file-input" accept=".xlsx,.xls,.xlsb"
+      onchange="handleFile(this.files[0])">
+    <div class="upload-icon">📂</div>
+    <div class="upload-label">Drop file here or click to browse</div>
+    <div class="upload-hint">Accepts .xlsx · .xls · .xlsb</div>
+  </div>
+
+  <div class="file-chosen" id="file-chosen">
+    <span>📄</span>
+    <span id="file-name-display">—</span>
+  </div>
+
+  <button class="btn" id="upload-btn" disabled onclick="uploadFile()">
+    Upload File
+  </button>
+
+  <div class="status" id="status-msg"></div>
+
+  <div class="prev-uploads" id="prev-section" style="display:none">
+    <div class="prev-title">Previous uploads this month</div>
+    <div id="prev-list"></div>
+  </div>
+</div>
+
+<script>
+let selectedFile = null;
+let userInfo = {};
+
+// Load user info on page load
+google.script.run
+  .withSuccessHandler(info => {
+    userInfo = info;
+    document.getElementById('brand-name').textContent = info.brand || info.email;
+  })
+  .withFailureHandler(err => console.error(err))
+  .getCurrentUser();
+
+// Load month
+document.getElementById('month-name').textContent = '<?= CONFIG.CONSOLIDATION_MONTH ?>';
+
+// Load previous uploads
+loadPrevUploads();
+
+function loadPrevUploads() {
+  google.script.run
+    .withSuccessHandler(data => {
+      const brand = userInfo.brand;
+      if (data.uploaded[brand]) {
+        document.getElementById('prev-section').style.display = '';
+        const info = data.uploaded[brand];
+        document.getElementById('prev-list').innerHTML = `
+          <div class="prev-item">
+            <span>${info.fileName}</span>
+            <span style="color:var(--muted)">${info.date}</span>
+          </div>`;
+      }
+    })
+    .getUploadStatus();
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.remove('drag');
+  handleFile(e.dataTransfer.files[0]);
+}
+
+function handleFile(file) {
+  if (!file) return;
+  if (!/\.(xlsx|xls|xlsb)$/i.test(file.name)) {
+    showStatus('Please select an Excel file (.xlsx, .xls, .xlsb)', 'err');
+    return;
+  }
+  selectedFile = file;
+  document.getElementById('file-name-display').textContent = file.name;
+  document.getElementById('file-chosen').classList.add('show');
+  document.getElementById('upload-btn').disabled = false;
+  showStatus('', '');
+}
+
+function uploadFile() {
+  if (!selectedFile) return;
+  const btn = document.getElementById('upload-btn');
+  btn.disabled = true;
+  btn.textContent = 'Uploading...';
+  showStatus('Uploading — please wait...', 'loading');
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const params = new URLSearchParams();
+    params.append('fileData', e.target.result);
+    params.append('fileName', selectedFile.name);
+
+    fetch(window.location.href, {
+      method: 'POST',
+      body: params
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        showStatus(`✓ Uploaded successfully as ${data.fileName}`, 'ok');
+        btn.textContent = '✓ Uploaded';
+        selectedFile = null;
+        document.getElementById('file-chosen').classList.remove('show');
+        loadPrevUploads();
+      } else {
+        showStatus('Upload failed: ' + (data.error || 'Unknown error'), 'err');
+        btn.disabled = false;
+        btn.textContent = 'Upload File';
+      }
+    })
+    .catch(err => {
+      showStatus('Upload failed: ' + err.message, 'err');
+      btn.disabled = false;
+      btn.textContent = 'Upload File';
+    });
+  };
+  reader.readAsDataURL(selectedFile);
+}
+
+function showStatus(msg, type) {
+  const el = document.getElementById('status-msg');
+  el.textContent = msg;
+  el.className = 'status' + (type ? ' ' + type : '');
+}
+</script>
+</body>
+</html>

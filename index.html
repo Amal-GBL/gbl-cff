@@ -420,7 +420,7 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
   <div class="sb-logo">
     <div class="sb-brand">GBL Finance</div>
     <div class="sb-title">Cash Flow<br>Consolidation</div>
-    <div class="sb-sub">FY22 → FY27 · Built 10-Jul-2026 07:52</div>
+    <div class="sb-sub">FY22 → FY27 · Built 10-Jul-2026 08:43</div>
   </div>
   <div class="sb-nav">
     <div class="nav-sec">FY27 Workflow</div>
@@ -2406,7 +2406,7 @@ function populateLICFLines(){
   if(!cfSel) return;
   const lines=new Set();
   S.consolidated.forEach(r=>{
-    if(!IC_LINES_SET.has(r.cfLine)) lines.add(r.cfLine);
+    lines.add(r.cfLine);// all lines including IC
   });
   cfSel.innerHTML='<option value="ALL">All CF Lines</option>'+
     [...lines].sort().map(l=>`<option value="${l.replace(/"/g,'&quot;')}">${l}</option>`).join('');
@@ -2547,7 +2547,7 @@ function exportFilteredLI(){
   const cfFilter=document.getElementById('li-cfline')?.value||'ALL';
   const kwFilter=(document.getElementById('li-keyword')?.value||'').toLowerCase().trim();
   const filtered=S.consolidated.filter((r,ci)=>{
-    if(IC_LINES_SET.has(r.cfLine)) return false;
+    // all lines included in export
     if(brandFilter!=='ALL'&&r.brand!==brandFilter) return false;
     if(grpFilter!=='ALL'&&r.grouping!==grpFilter) return false;
     if(cfFilter!=='ALL'&&r.cfLine!==cfFilter) return false;

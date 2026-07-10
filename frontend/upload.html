@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GBL CFF — Upload</title>
+<style>
+:root{--ink:#1a1a2e;--paper:#f8f7f4;--rule:#e0ddd6;--accent:#2e6b9e;--accent-light:#eaf2fa;
+  --green:#1a7a4a;--green-light:#e6f4ed;--red:#c0392b;--red-light:#fdeaea;
+  --amber:#b7600d;--amber-light:#fef3e2;--muted:#7a7a8a;--sidebar:#16213e;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--paper);color:var(--ink);min-height:100vh;display:flex;flex-direction:column;}
+.topbar{background:var(--sidebar);padding:0 28px;height:54px;display:flex;align-items:center;justify-content:space-between;}
+.logo{width:30px;height:30px;background:var(--accent);border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;color:#fff;margin-right:12px;}
+.topbar-left{display:flex;align-items:center;}
+.topbar-title{font-size:14px;font-weight:700;color:#fff;}
+.topbar-sub{font-size:11px;color:#8892b0;}
+.user-pill{background:#0f3460;border-radius:100px;padding:5px 12px;font-size:11px;color:#8892b0;display:flex;align-items:center;gap:6px;}
+.udot{width:7px;height:7px;border-radius:50%;background:var(--green);}
+.main{flex:1;display:flex;align-items:center;justify-content:center;padding:32px 16px;}
+.card{background:#fff;border:1px solid var(--rule);border-radius:12px;padding:40px 44px;width:100%;max-width:500px;box-shadow:0 4px 24px rgba(0,0,0,.06);}
+.chips{margin-bottom:22px;}
+.brand-chip{display:inline-flex;align-items:center;gap:8px;background:var(--sidebar);color:#ccd6f6;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;}
+.month-chip{display:inline-flex;align-items:center;background:var(--amber-light);color:var(--amber);border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;margin-left:8px;}
+h2{font-size:20px;font-weight:700;margin-bottom:4px;}
+.sub{font-size:13px;color:var(--muted);margin-bottom:28px;}
+.dropzone{border:2px dashed var(--rule);border-radius:10px;padding:36px 24px;text-align:center;cursor:pointer;transition:all .2s;position:relative;margin-bottom:16px;}
+.dropzone:hover,.dropzone.drag{border-color:var(--accent);background:var(--accent-light);}
+.dropzone.ready{border-color:var(--green);background:var(--green-light);border-style:solid;}
+.dropzone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;}
+.dz-icon{font-size:38px;margin-bottom:10px;display:block;}
+.dz-label{font-size:14px;font-weight:600;margin-bottom:4px;}
+.dz-hint{font-size:12px;color:var(--muted);}
+.dz-fname{font-size:12px;font-weight:600;color:var(--green);margin-top:6px;}
+.btn{width:100%;padding:13px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;border:none;transition:all .15s;background:var(--accent);color:#fff;}
+.btn:hover{background:#1e5280;}
+.btn:disabled{background:#a0aec0;cursor:not-allowed;}
+.sbox{border-radius:8px;padding:12px 16px;font-size:13px;margin-top:14px;display:none;line-height:1.5;}
+.sbox.info{background:var(--accent-light);border:1px solid #bee3f8;color:#2a4365;display:block;}
+.sbox.ok{background:var(--green-light);border:1px solid #9ae6b4;color:var(--green);display:block;}
+.sbox.err{background:var(--red-light);border:1px solid #fc8181;color:var(--red);display:block;}
+.sbox.wait{background:#f8f7f4;border:1px solid var(--rule);color:var(--muted);display:flex;align-items:center;gap:10px;}
+.prev{margin-top:28px;border-top:1px solid var(--rule);padding-top:20px;}
+.prev-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:10px;}
+.prev-item{display:flex;justify-content:space-between;align-items:center;padding:9px 12px;border-radius:6px;background:#fafaf8;margin-bottom:6px;font-size:12px;}
+.v-tag{background:var(--accent);color:#fff;border-radius:4px;padding:2px 7px;font-size:10px;font-weight:700;margin-left:6px;}
+.spin{width:16px;height:16px;border:2px solid var(--rule);border-top-color:var(--accent);border-radius:50%;animation:s .7s linear infinite;flex-shrink:0;}
+@keyframes s{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="logo">G</div>
+    <div><div class="topbar-title">GBL Cash Flow Consolidation</div><div class="topbar-sub">Brand File Upload Portal</div></div>
+  </div>
+  <div class="user-pill"><div class="udot"></div><span id="u-email">—</span></div>
+</div>
+
+<div class="main">
+  <div class="card">
+    <div class="chips">
+      <span class="brand-chip">🏷 <span id="brand-name">Loading...</span></span>
+      <span class="month-chip" id="month-chip">—</span>
+    </div>
+    <h2>Upload Cash Flow File</h2>
+    <p class="sub">Upload your brand's monthly cash flow file for GBL consolidation.</p>
+
+    <div class="dropzone" id="dz"
+      ondragover="event.preventDefault();this.classList.add('drag')"
+      ondragleave="this.classList.remove('drag')"
+      ondrop="onDrop(event)">
+      <input type="file" id="fi" accept=".xlsx,.xls,.xlsb" onchange="onFile(this.files[0])">
+      <span class="dz-icon" id="dz-icon">📂</span>
+      <div class="dz-label" id="dz-label">Drop file here or click to browse</div>
+      <div class="dz-hint" id="dz-hint">Accepts .xlsx · .xls · .xlsb</div>
+      <div class="dz-fname" id="dz-fname"></div>
+    </div>
+
+    <button class="btn" id="upbtn" disabled onclick="doUpload()">Upload File</button>
+    <div class="sbox" id="sbox"></div>
+
+    <div class="prev" id="prev" style="display:none">
+      <div class="prev-title">Previous uploads this month</div>
+      <div id="prev-list"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── PLUG THESE IN WHEN EC2 IS READY ──────────────────────────────────────
+const API = {
+  me:     '/api/me',
+  status: '/api/upload-status',
+  upload: '/api/upload',
+};
+// ─────────────────────────────────────────────────────────────────────────
+
+let file = null;
+
+async function init() {
+  try {
+    const u = await (await fetch(API.me,{credentials:'include'})).json();
+    document.getElementById('u-email').textContent   = u.email;
+    document.getElementById('brand-name').textContent = u.brand;
+  } catch {
+    document.getElementById('u-email').textContent   = 'demo@goatbrandlabs.com';
+    document.getElementById('brand-name').textContent = 'Your Brand (demo)';
+  }
+  try {
+    const s = await (await fetch(API.status,{credentials:'include'})).json();
+    document.getElementById('month-chip').textContent = s.month;
+    if (s.uploads?.length) {
+      document.getElementById('prev').style.display = '';
+      document.getElementById('prev-list').innerHTML = s.uploads.map(u=>
+        `<div class="prev-item"><span>${u.fileName}<span class="v-tag">V${u.version}</span></span>
+         <span style="color:var(--muted)">${u.date}</span></div>`).join('');
+    }
+  } catch { document.getElementById('month-chip').textContent = '6-2026'; }
+}
+
+function onDrop(e) {
+  e.preventDefault();
+  document.getElementById('dz').classList.remove('drag');
+  onFile(e.dataTransfer.files[0]);
+}
+
+function onFile(f) {
+  if (!f) return;
+  if (!/\.(xlsx|xls|xlsb)$/i.test(f.name)) { status('Please select an Excel file (.xlsx / .xls / .xlsb)','err'); return; }
+  file = f;
+  document.getElementById('dz').classList.add('ready');
+  document.getElementById('dz-icon').textContent  = '✅';
+  document.getElementById('dz-label').textContent = 'File selected';
+  document.getElementById('dz-hint').textContent  = '';
+  document.getElementById('dz-fname').textContent = f.name;
+  document.getElementById('upbtn').disabled = false;
+  status('','');
+}
+
+async function doUpload() {
+  if (!file) return;
+  const btn = document.getElementById('upbtn');
+  btn.disabled = true; btn.textContent = 'Uploading...';
+  status('<div class="spin"></div> Uploading to Google Drive — please wait...','wait');
+  try {
+    const fd = new FormData(); fd.append('file', file);
+    const d = await (await fetch(API.upload,{method:'POST',body:fd,credentials:'include'})).json();
+    if (d.success) {
+      status(`✓ Uploaded as <strong>${d.fileName}</strong><br>Finance team has been notified.`,'ok');
+      btn.textContent = '✓ Uploaded';
+      resetDZ();
+    } else throw new Error(d.error||'Upload failed');
+  } catch(e) {
+    status('Upload failed: '+e.message,'err');
+    btn.disabled=false; btn.textContent='Upload File';
+  }
+}
+
+function resetDZ() {
+  file=null;
+  document.getElementById('dz').className='dropzone';
+  document.getElementById('dz-icon').textContent ='📂';
+  document.getElementById('dz-label').textContent='Drop file here or click to browse';
+  document.getElementById('dz-hint').textContent ='Accepts .xlsx · .xls · .xlsb';
+  document.getElementById('dz-fname').textContent='';
+  document.getElementById('fi').value='';
+}
+
+function status(html, type) {
+  const el=document.getElementById('sbox');
+  el.innerHTML=html; el.className='sbox'+(type?' '+type:'');
+}
+
+init();
+</script>
+</body>
+</html>

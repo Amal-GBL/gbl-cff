@@ -2535,14 +2535,18 @@ function renderReport(){
   thead.innerHTML=`<tr><th style="min-width:220px;padding:7px 10px;text-align:left;font-size:10px;font-weight:700;${stickyCorner}">Line Item (₹)</th>${hdrCells}</tr>`;
   tbody.innerHTML=rows.join('');
 
-  // JS-based column freeze fallback — fires on scroll of the scroll container
+  // Freeze first column via scroll listener
   const scroller = document.getElementById('rt-scroll');
   if(scroller){
-    scroller.onscroll = function(){
+    function freezeFirstCol(){
       const x = scroller.scrollLeft;
-      const firstCells = scroller.querySelectorAll('tr > td:first-child, tr > th:first-child');
-      firstCells.forEach(cell => { cell.style.transform = `translateX(${x}px)`; });
-    };
+      scroller.querySelectorAll('tr > *:first-child').forEach(cell=>{
+        cell.style.position = 'relative';
+        cell.style.left = x + 'px';
+        cell.style.zIndex = '3';
+      });
+    }
+    scroller.addEventListener('scroll', freezeFirstCol, {passive:true});
   }
 }
 

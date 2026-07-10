@@ -733,9 +733,7 @@ const GH_SYNC = {
   token:  ['ghp_3rUT7VmbOtu','ooNHkTYfNRkKd3Q5R32UcR3L'].join('m'),
   repo:   'Amal-GBL/gbl-cff',
   branch: 'dev',
-  file:   'session.json',
-  // Public read URL via GitHub Pages (no auth needed)
-  readUrl: 'https://amal-gbl.github.io/gbl-cff/session.json'
+  file:   'session.json'
 };
 
 const CONSOLIDATION_MONTH = '6-2026';  // Format: M-YYYY
@@ -983,10 +981,20 @@ async function pushSessionToGitHub(snapshot){
 
 async function fetchSessionFromGitHub(){
   try{
-    const r = await fetch(GH_SYNC.readUrl + '?t=' + Date.now());
+    const api = `https://api.github.com/repos/${GH_SYNC.repo}/contents/${GH_SYNC.file}?ref=${GH_SYNC.branch}`;
+    const r = await fetch(api, {
+      headers: {
+        'Authorization': `Bearer ${GH_SYNC.token}`,
+        'Accept': 'application/vnd.github+json'
+      }
+    });
     if(!r.ok) return null;
-    return await r.json();
-  }catch(e){ return null; }
+    const meta = await r.json();
+    if(!meta.content) return null;
+    // GitHub returns base64-encoded content
+    const decoded = decodeURIComponent(escape(atob(meta.content.replace(/\n/g,''))));
+    return JSON.parse(decoded);
+  }catch(e){ console.warn('fetchSessionFromGitHub failed:', e); return null; }
 }
 
 function setSyncBadge(text, color){

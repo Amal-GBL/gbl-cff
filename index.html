@@ -31,7 +31,7 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
 .sb-foot{padding:12px 18px;border-top:1px solid #0f3460;font-size:11px;color:#4a5568;line-height:1.5;}
 .prog-wrap{background:#0f3460;border-radius:100px;height:5px;margin-top:7px;overflow:hidden;}
 .prog-bar{height:100%;border-radius:100px;background:#64b5f6;transition:width .4s;}
-.main{margin-left:224px;flex:1;display:flex;flex-direction:column;max-width:calc(100vw - 224px);overflow-x:hidden;}
+.main{margin-left:224px;flex:1;display:flex;flex-direction:column;max-width:calc(100vw - 224px);}
 .topbar{background:#fff;border-bottom:1px solid var(--rule);padding:11px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50;}
 .topbar-title{font-size:15px;font-weight:600;}
 .topbar-meta{display:flex;gap:10px;align-items:center;}
@@ -611,7 +611,7 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
           <div class="pt">3-Tier Cash Flow Statement</div>
           <div id="report-period-label" style="font-size:12px;color:var(--muted);"></div>
         </div>
-        <div id="rt-scroll" style="overflow-x:auto;overflow-y:visible;padding:0;max-width:100%;width:100%;"><table class="rt" style="min-width:900px;border-collapse:separate;border-spacing:0;"><thead id="rt-head"></thead><tbody id="rt-body"></tbody></table></div>
+        <div id="rt-scroll" style="overflow:auto;padding:0;max-width:100%;width:100%;max-height:calc(100vh - 130px);"><table class="rt" style="min-width:900px;border-collapse:separate;border-spacing:0;"><thead id="rt-head"></thead><tbody id="rt-body"></tbody></table></div>
       </div>
     </div>
 
@@ -2384,8 +2384,8 @@ function renderReport(){
   const nCols=months.length;
   const colW=Math.max(90,Math.min(120,Math.floor(900/Math.max(nCols,1))));
   const stickyCol='position:sticky;left:0;z-index:2;box-shadow:2px 0 4px rgba(0,0,0,0.08);';
-  const stickyHdr='position:sticky;top:46px;z-index:4;background:var(--sidebar);color:#ccd6f6;';
-  const stickyCorner='position:sticky;top:46px;left:0;z-index:5;background:var(--sidebar);color:#ccd6f6;';
+  const stickyHdr='position:sticky;top:0;z-index:4;background:var(--sidebar);color:#ccd6f6;';
+  const stickyCorner='position:sticky;top:0;left:0;z-index:5;background:var(--sidebar);color:#ccd6f6;';
 
   // ── Row builders (same pattern as MIS) ───────────────────────────────────
   const rows=[];

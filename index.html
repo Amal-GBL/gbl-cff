@@ -2392,11 +2392,11 @@ function renderReport(){
 
   function secRow(lbl){
     const cells=months.map(()=>`<td style="background:#ddd9d0;border-top:1px solid #ccc"></td>`).join('');
-    rows.push(`<tr><td style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--muted);background:#ddd9d0;text-transform:uppercase;letter-spacing:.07em;border-top:1px solid #ccc;${stickyCol}">${lbl}</td>${cells}</tr>`);
+    rows.push(`<tr><td style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--muted);background:#ddd9d0;text-transform:uppercase;letter-spacing:.07em;border-top:1px solid #ccc;${stickyCol}background:#ddd9d0">${lbl}</td>${cells}</tr>`);
   }
   function subHdr(lbl){
     const cells=months.map(()=>`<td style="background:#f8f7f4;border-top:0.5px solid var(--rule)"></td>`).join('');
-    rows.push(`<tr><td style="padding:4px 10px 3px 16px;font-size:10px;font-weight:600;color:var(--muted);background:#f8f7f4;font-style:italic;${stickyCol}">${lbl}</td>${cells}</tr>`);
+    rows.push(`<tr><td style="padding:4px 10px 3px 16px;font-size:10px;font-weight:600;color:var(--muted);background:#f8f7f4;font-style:italic;${stickyCol}background:#f8f7f4">${lbl}</td>${cells}</tr>`);
   }
   function blk(){
     const cells=months.map(()=>`<td style="height:5px"></td>`).join('');

@@ -1718,6 +1718,18 @@ function renderMapping(){
     const badge=u>0?`<span class="badge br">${u} unmapped</span>`:`<span class="badge bg">✓ Mapped</span>`;
     const hasTarget=(d.allMonths||[]).includes(CONSOLIDATION_MONTH);
     const targetBadge=hasTarget?`<span class="badge bg">${CONSOLIDATION_MONTH} ✓</span>`:`<span class="badge ba">${CONSOLIDATION_MONTH} missing</span>`;
+    // Resumed session stub - no rows, show compact card
+    if(!d.rows||d.rows.length===0){
+      const consolidatedRows=S.consolidated.filter(r=>r.brand.replace(/__dup__\w+$/,'')===(d.displayName||name)).length;
+      return `<div class="bmp" id="bmp-${name.replace(/\W/g,'_')}">
+        <div class="bmp-h" onclick="toggleBmp(this)">
+          <div class="bmp-ht">${d.filename||name} <span style="font-weight:400;font-size:11px;color:var(--muted)">→ ${d.displayName||name}</span></div>
+          <div style="display:flex;gap:4px;align-items:center;"><span class="badge bg">✓ Consolidated (${consolidatedRows} rows)</span><span>▼</span></div>
+        </div>
+        <div class="bmp-b" style="display:none;padding:10px 14px;font-size:12px;color:var(--muted);">
+          Session restored — file not re-uploaded.<br>To replace this brand: <strong>Upload tab → Remove → re-upload corrected file</strong>.
+        </div></div>`;
+    }
     const grpCounts={};d.rows.forEach(r=>{grpCounts[r.grouping]=(grpCounts[r.grouping]||0)+1;});
     const trs=Object.entries(grpCounts).sort(([a],[b])=>{const av=m[a],bv=m[b];if(av===null&&bv!==null)return -1;if(av!==null&&bv===null)return 1;return a.localeCompare(b);})
       .map(([grp,cnt])=>{
@@ -1765,40 +1777,62 @@ function consolidate(){
   if(Object.entries(S.mapping).some(([b,m])=>!S.brands[b]?.isDup&&Object.values(m).some(v=>v===null))){
     alert('Some groupings still unmapped (red). Assign, mark Structural, or Ignore before proceeding.');return;
   }
-  // Preserve any IC fixes (cfLine overrides) already made in current session
+
+  // Preserve IC fixes (cfLine overrides) on existing rows
   const icFixes={};
   S.consolidated.forEach(r=>{
     if(r._uid && r.cfLine !== (S.mapping[r.brand]?.[r.grouping])){
-      icFixes[r._uid]=r.cfLine; // preserve manual override
+      icFixes[r._uid]=r.cfLine;
     }
   });
 
-  // Save all confirmed mappings
-  Object.entries(S.mapping).forEach(([brand,m])=>{
-    // Mapping saved in session snapshot
+  // Identify brands being (re-)consolidated now = those with actual rows uploaded
+  const brandsWithRows=new Set(Object.entries(S.brands).filter(([k,d])=>d.rows&&d.rows.length>0).map(([k])=>k));
+  const baseBrandsWithRows=new Set([...brandsWithRows].map(k=>k.replace(/__dup__\w+$/,'')));
+
+  // Remove existing consolidated rows for brands being re-uploaded (replace, not stack)
+  S.consolidated=S.consolidated.filter(r=>{
+    const base=r.brand.replace(/__dup__\w+$/,'');
+    return !baseBrandsWithRows.has(base) && !brandsWithRows.has(r.brand);
   });
-  S.consolidated=[];
-  // Phase 1: build recon first to know which brands pass
+
+  // Build recon for brands being uploaded now
   buildRecon();
-  // Phase 2: identify passing brands (pass=true or no summary to check against)
+
+  // Identify failed brands (recon mismatch)
   const failedBrands=new Set();
   Object.entries(S.recon).forEach(([brand,months])=>{
-    Object.values(months).forEach(r=>{
-      if(r.hasSummary&&!r.pass) failedBrands.add(brand);
-    });
+    if(brandsWithRows.has(brand)){
+      Object.values(months).forEach(r=>{ if(r.hasSummary&&!r.pass) failedBrands.add(brand); });
+    }
   });
-  S.excludedBrands=[...failedBrands];
-  // Phase 3: only include passing brands in consolidation
-  Object.values(S.brands).forEach(d=>{
+  S.excludedBrands=[...new Set([...S.excludedBrands||[],...failedBrands])];
+
+  // Add rows for newly uploaded brands only
+  Object.entries(S.brands).forEach(([brandKey,d])=>{
+    if(!brandsWithRows.has(brandKey)) return; // skip stub brands (already consolidated)
     d.rows.forEach(r=>{
       const cf=S.mapping[r.brand]?.[r.grouping];
       if(!cf||cf==='__structural__'||cf==='__ignore__') return;
       if(r.month!==CONSOLIDATION_MONTH) return;
-      if(failedBrands.has(r.brand)) return; // exclude mismatch brands
+      if(failedBrands.has(r.brand)) return;
       S.consolidated.push({...r,cfLine:cf,activity:ACT_OF[cf]||''});
     });
   });
+
   S.months=[...new Set(S.consolidated.map(r=>r.month))].sort(sortM);
+  S.brandList=[...new Set(S.consolidated.map(r=>r.brand))].sort();
+
+  // Re-apply IC fixes
+  if(Object.keys(icFixes).length){
+    S.consolidated.forEach(r=>{ if(r._uid && icFixes[r._uid]) r.cfLine=icFixes[r._uid]; });
+  }
+
+  populateFilters();runChecks();
+  markStep(2,'done');markStep(3,'active');showPage('recon');renderRecon();
+}
+
+
   S.brandList=[...new Set(S.consolidated.map(r=>r.brand))].sort();
 
   // Re-apply any IC fixes that were previously made

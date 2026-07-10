@@ -1186,6 +1186,18 @@ async function checkForSavedSession(){
     setSyncBadge('⟳ Checking cloud…', '#a0b4c8');
     const snap = await fetchSessionFromGitHub();
     if(snap && snap.month === CONSOLIDATION_MONTH){
+      _pendingSnap = snap;
+      // Pre-populate S.brands stubs so Upload grid shows cards immediately
+      if(snap.brandMeta){
+        Object.entries(snap.brandMeta).forEach(([k,m])=>{
+          S.brands[k]={displayName:m.displayName,filename:m.filename,
+            isDup:m.isDup,rows:[],rowCount:m.rowCount,
+            brandSummary:m.brandSummary||{}};
+          if(!S.mapping[k]) S.mapping[k]={};
+        });
+        S.consolidated = snap.consolidated || [];
+        renderGrid();
+      }
       _showSessionBanner(snap, 'cloud');
     } else if(snap && snap.month){
       setSyncBadge('☁ ' + snap.month + ' session on cloud', '#888');

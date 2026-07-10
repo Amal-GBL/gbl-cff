@@ -420,7 +420,7 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
   <div class="sb-logo">
     <div class="sb-brand">GBL Finance</div>
     <div class="sb-title">Cash Flow<br>Consolidation</div>
-    <div class="sb-sub">FY22 → FY27 · Built 10-Jul-2026 08:43</div>
+    <div class="sb-sub">FY22 → FY27 · Built 10-Jul-2026 09:12</div>
   </div>
   <div class="sb-nav">
     <div class="nav-sec">FY27 Workflow</div>
@@ -2094,185 +2094,292 @@ function setFY(fy){
 }
 
 function renderReport(){
-  const bakeBtn=document.getElementById('bake-btn');
-  if(bakeBtn) bakeBtn.textContent='\u2713 Close '+CONSOLIDATION_MONTH+' & Bake In';
+  const selBrand = document.getElementById('rf-brand')?.value||'ALL';
+  const selFY    = window._currentFY||currentFY||'ALL';
 
-  const selFY=window._currentFY||currentFY||'ALL';
-  const selBrand=document.getElementById('rf-brand')?.value||'ALL';
-
-  // All rows: HIST + new uploads
-  const rows=getAllRows(selBrand,selFY);
-  const months=[...new Set(rows.map(r=>r.month))].sort(sortM);
-  const showM=months.length<=13;
-  const nCols=months.length;
-  const colW=Math.max(70,Math.min(110,Math.floor(900/Math.max(nCols,1))));
-
-  // Aggregate CF lines
-  const agg={};
-  rows.forEach(r=>{
-    if(!agg[r.cfLine])agg[r.cfLine]={};
-    agg[r.cfLine][r.month]=(agg[r.cfLine][r.month]||0)+r.net;
-  });
-
-  // Period label
-  const fyLabel={'ALL':'All Periods (FY22 \u2192 FY27)','FY22':'FY22 (Apr-21 to Mar-22)',
-    'FY23':'FY23','FY24':'FY24','FY25':'FY25','FY26':'FY26',
-    'FY27':'FY27 (Apr-26+)','JUN26':'Jun-26 Only'};
-  const periodEl=document.getElementById('report-period-label');
-  if(periodEl) periodEl.textContent=(fyLabel[selFY]||selFY)+(months.length?' \u00b7 '+months.length+' months':'');
-
-  const thead=document.getElementById('rt-head');
-  const tbody=document.getElementById('rt-body');
+  const thead = document.getElementById('rt-head');
+  const tbody = document.getElementById('rt-body');
+  const periodEl = document.getElementById('report-period-label');
   if(!thead||!tbody) return;
 
-  // Closing actual from HIST.closing + new months
-  const closingActual={};
-  const breakdownByType={};
-  const BTYPES=['Cash','Bank Accounts','Deposits','Deposits - Sing','Mutual Fund','OD'];
-  BTYPES.forEach(t=>{breakdownByType[t]={};});
+  // ── Data helpers ─────────────────────────────────────────────────────────
+  // Build data lookup: brand → month(M-YYYY) → {cfLine → net}
+  // from HIST.data + S.consolidated
+  const dataLookup = {}; // brand → month → cfLine → net
+  const BTYPES = ['Cash','Bank Accounts','Deposits','Deposits - Sing','Mutual Fund','OD'];
+  const FY_ORD = [4,5,6,7,8,9,10,11,12,1,2,3];
+  const MN = {1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'May',6:'Jun',
+               7:'Jul',8:'Aug',9:'Sep',10:'Oct',11:'Nov',12:'Dec'};
 
-  const histBrands=selBrand==='ALL'?Object.keys(HIST.closing||{}):[selBrand].filter(b=>(HIST.closing||{})[b]);
+  // Populate from HIST
+  const histBrands = selBrand==='ALL'
+    ? Object.keys(HIST.data||{})
+    : [selBrand].filter(b=>(HIST.data||{})[b]);
+
   histBrands.forEach(brand=>{
-    Object.entries((HIST.closing||{})[brand]||{}).forEach(([m,v])=>{
-      if(monthInFY(m,selFY)) closingActual[m]=(closingActual[m]||0)+v;
+    Object.entries((HIST.data||{})[brand]||{}).forEach(([month,lines])=>{
+      if(!dataLookup[brand]) dataLookup[brand]={};
+      if(!dataLookup[brand][month]) dataLookup[brand][month]={};
+      Object.entries(lines).forEach(([cfLine,d])=>{
+        dataLookup[brand][month][cfLine]=(dataLookup[brand][month][cfLine]||0)+(d.net||d||0);
+      });
     });
   });
-  Object.entries(HIST.breakdown||{}).forEach(([brand,mths])=>{
+
+  // Populate from S.consolidated (new uploads)
+  S.consolidated.forEach(r=>{
+    if(selBrand!=='ALL'&&r.brand!==selBrand) return;
+    if(!dataLookup[r.brand]) dataLookup[r.brand]={};
+    if(!dataLookup[r.brand][r.month]) dataLookup[r.brand][r.month]={};
+    dataLookup[r.brand][r.month][r.cfLine]=(dataLookup[r.brand][r.month][r.cfLine]||0)+(r.net||0);
+  });
+
+  // Closing balance lookup: brand → month → {type → value}
+  const closeLookup={}; // brand → month → {Cash,Bank Accounts,...,_total}
+  Object.entries(HIST.closing||{}).forEach(([brand,months])=>{
     if(selBrand!=='ALL'&&brand!==selBrand) return;
-    Object.entries(mths).forEach(([m,types])=>{
-      if(!monthInFY(m,selFY)) return;
+    closeLookup[brand]={};
+    Object.entries(months).forEach(([m,v])=>{
+      closeLookup[brand][m]={_total:v};
+    });
+  });
+  Object.entries(HIST.breakdown||{}).forEach(([brand,months])=>{
+    if(selBrand!=='ALL'&&brand!==selBrand) return;
+    if(!closeLookup[brand]) closeLookup[brand]={};
+    Object.entries(months).forEach(([m,types])=>{
+      if(!closeLookup[brand][m]) closeLookup[brand][m]={};
       Object.entries(types).forEach(([t,v])=>{
-        if(!breakdownByType[t]) breakdownByType[t]={};
-        breakdownByType[t][m]=(breakdownByType[t][m]||0)+v;
+        closeLookup[brand][m][t]=(closeLookup[brand][m][t]||0)+v;
       });
     });
   });
 
-  // CF section totals per month
-  const sectionNet={ops:{},inv:{},fin:{}};
-  CF.structure.forEach((sec,si)=>{
-    const key=si===0?'ops':si===1?'inv':'fin';
-    sec.items.forEach(item=>{
-      months.forEach(m=>{
-        sectionNet[key][m]=(sectionNet[key][m]||0)+(agg[item]?.[m]||0);
-      });
+  // Brands in scope
+  const allBrands = selBrand==='ALL'
+    ? [...new Set([...Object.keys(dataLookup)])]
+    : [selBrand];
+
+  // All months available
+  const allMonthsSet = new Set();
+  allBrands.forEach(b=>Object.keys(dataLookup[b]||{}).forEach(m=>allMonthsSet.add(m)));
+  const allMonthsSorted = [...allMonthsSet].sort(sortM);
+
+  // FY of a month (Indian FY Apr-Mar)
+  function fyOfMonth(m){
+    const [mo,yr]=m.split('-').map(Number);
+    return 'FY'+(mo>=4?yr+1:yr).toString().slice(-2);
+  }
+  function monthInSelFY(m){
+    if(selFY==='ALL') return true;
+    if(selFY==='JUN26') return m===CONSOLIDATION_MONTH;
+    return fyOfMonth(m)===selFY;
+  }
+
+  const months = allMonthsSorted.filter(monthInSelFY);
+  if(!months.length){
+    thead.innerHTML=''; tbody.innerHTML='<tr><td style="padding:30px;text-align:center;color:var(--muted)">No data for selected period.</td></tr>';
+    return;
+  }
+
+  if(periodEl) periodEl.textContent = months[0]+' — '+months[months.length-1]+' · '+months.length+' months';
+
+  // ── Aggregation functions ─────────────────────────────────────────────────
+  function getLine(month, cfLine){
+    let t=0;
+    allBrands.forEach(b=>{
+      t+=(dataLookup[b]?.[month]?.[cfLine]||0);
     });
-  });
-  const netCF={};
+    return t;
+  }
+  function getClose(month, type){
+    let t=0;
+    allBrands.forEach(b=>{
+      t+=(closeLookup[b]?.[month]?.[type]||0);
+    });
+    return t;
+  }
+  function closingTotal(month){
+    // Use _total from HIST.closing if available, else sum breakdown
+    let t=0;
+    allBrands.forEach(b=>{
+      const ct=closeLookup[b]?.[month]?._total;
+      if(ct!==undefined) t+=ct;
+      else BTYPES.forEach(type=>{ t+=(closeLookup[b]?.[month]?.[type]||0); });
+    });
+    return t;
+  }
+
+  // ── CF Chain (continuous opening balance across all months) ────────────
+  const cfChain={}; // month → {opening, closing}
+  let cp=null;
   months.forEach(m=>{
-    netCF[m]=(sectionNet.ops[m]||0)+(sectionNet.inv[m]||0)+(sectionNet.fin[m]||0);
-  });
-
-  // Opening chain: Opening[m] = closingActual[prev month]
-  const openingDerived={};
-  months.forEach((m,i)=>{
-    if(i===0){
-      const ca=closingActual[m];
-      openingDerived[m]=ca!==undefined?ca-(netCF[m]||0):0;
-    } else {
-      openingDerived[m]=closingActual[months[i-1]]||0;
+    const nc = CF.structure.reduce((sum,sec)=>
+      sum+sec.items.reduce((s,item)=>s+(getLine(m,item)||0),0),0);
+    const acq = getLine(m,'Acquired Cash')||0;
+    if(cp===null){
+      // Bootstrap: derive opening from actual closing balance
+      const actualClose = closingTotal(m);
+      cp = actualClose - acq - nc;
     }
+    const closing = cp + acq + nc;
+    cfChain[m]={opening:cp, closing};
+    cp=closing;
   });
-  const closingDerived={};
-  months.forEach(m=>{closingDerived[m]=(openingDerived[m]||0)+(netCF[m]||0);});
-  const checkVal={};
-  months.forEach(m=>{checkVal[m]=(closingDerived[m]||0)-(closingActual[m]||0);});
 
-  // ── Build table ───────────────────────────────────────────────────────────
-  const trs=[];
-  const fmtV=v=>v===0||v===undefined?'\u2014':fmtN(v);
-  const cls=v=>v<0?'neg':v>0?'pos':'';
-  const colStyle=`width:${colW}px`;
+  // ── Column width ──────────────────────────────────────────────────────────
+  const nCols=months.length;
+  const colW=Math.max(90,Math.min(120,Math.floor(900/Math.max(nCols,1))));
+  const stickyCol='position:sticky;left:0;z-index:2;background:inherit;';
+  const stickyHdr='position:sticky;top:0;z-index:4;background:var(--sidebar);color:#ccd6f6;';
+  const stickyCorner='position:sticky;top:0;left:0;z-index:5;background:var(--sidebar);color:#ccd6f6;';
 
-  const addHdr=label=>{
-    trs.push(`<tr class="sec-h"><td class="sc" colspan="${showM?nCols+2:2}" style="padding:6px 10px">${label}</td></tr>`);
-  };
-  const addRow=(label,valMap,indent=1,bold=false)=>{
-    const tot=months.reduce((a,m)=>a+(valMap[m]||0),0);
-    const cells=months.map(m=>{const v=valMap[m]||0;return `<td class="num ${cls(v)}" style="${colStyle}">${fmtV(v)}</td>`;});
-    const labelStyle=`padding-left:${indent*14+6}px;font-weight:${bold?700:400};min-width:220px`;
-    trs.push(showM
-      ?`<tr><td class="sc" style="${labelStyle}">${label}</td>${cells.join('')}<td class="num ${cls(tot)}" style="background:#f5f4f0;font-weight:600;${colStyle}">${fmtV(tot)}</td></tr>`
-      :`<tr><td class="sc" style="${labelStyle}">${label}</td><td class="num ${cls(tot)}">${fmtV(tot)}</td></tr>`);
-  };
-  const addSubt=(label,valMap,bg='#d8d3c8')=>{
-    const tot=months.reduce((a,m)=>a+(valMap[m]||0),0);
-    const cells=months.map(m=>{const v=valMap[m]||0;return `<td class="num ${cls(v)}" style="${colStyle}">${fmtV(v)}</td>`;});
-    trs.push(showM
-      ?`<tr class="subt"><td class="sc" style="min-width:220px">${label}</td>${cells.join('')}<td class="num ${cls(tot)}" style="background:${bg};font-weight:700;${colStyle}">${fmtV(tot)}</td></tr>`
-      :`<tr class="subt"><td class="sc">${label}</td><td class="num ${cls(tot)}">${fmtV(tot)}</td></tr>`);
-  };
-  const addSep=()=>trs.push(`<tr><td colspan="${showM?nCols+2:2}" style="height:6px"></td></tr>`);
+  // ── Row builders (same pattern as MIS) ───────────────────────────────────
+  const rows=[];
 
-  // ── 3 TIER section ────────────────────────────────────────────────────────
-  addHdr('3 TIER');
-  addRow('Opening Cash & Cash Equivalents',openingDerived,1);
-  addRow('Acquired Cash',agg['Acquired Cash']||{},1);
-  addRow('Closing Cash & Cash Equivalents',closingDerived,1);
-  addSep();
-  addRow('Closing Balance',closingActual,1);
-  addRow('Check',checkVal,1);
-  trs.push(`<tr><td colspan="${showM?nCols+2:2}" style="height:4px;border-bottom:1px solid var(--rule)"></td></tr>`);
+  function secRow(lbl){
+    const cells=months.map(()=>`<td style="background:#ddd9d0;border-top:1px solid #ccc"></td>`).join('');
+    rows.push(`<tr><td style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--muted);background:#ddd9d0;text-transform:uppercase;letter-spacing:.07em;border-top:1px solid #ccc;${stickyCol}">${lbl}</td>${cells}</tr>`);
+  }
+  function subHdr(lbl){
+    const cells=months.map(()=>`<td style="background:#f8f7f4;border-top:0.5px solid var(--rule)"></td>`).join('');
+    rows.push(`<tr><td style="padding:4px 10px 3px 16px;font-size:10px;font-weight:600;color:var(--muted);background:#f8f7f4;font-style:italic;${stickyCol}">${lbl}</td>${cells}</tr>`);
+  }
+  function blk(){
+    const cells=months.map(()=>`<td style="height:5px"></td>`).join('');
+    rows.push(`<tr><td style="height:5px;${stickyCol}background:#fff"></td>${cells}</tr>`);
+  }
+  function fmtV(v){
+    if(Math.abs(v)<500) return '<span style="color:var(--muted)">—</span>';
+    const neg=v<0;
+    const n=Math.round(Math.abs(v)).toLocaleString('en-IN');
+    return neg?`<span style="color:var(--red)">(${n})</span>`:`<span style="color:var(--green)">${n}</span>`;
+  }
+  function dRow(lbl,vals,opts={}){
+    const {hl,grand,ind,bold}=opts;
+    const bg=grand?'#d4e6f5':hl?'#f0ede6':'#fff';
+    const fw=grand||bold?'font-weight:700;':'';
+    const pl=ind?'padding-left:22px;':'';
+    const bt=(hl||grand)?'border-top:1.5px solid #ccc;':'border-top:0.5px solid var(--rule);';
+    const tdBase=`padding:5px 10px;font-size:11px;font-family:'Courier New',monospace;text-align:right;${bt}`;
+    const cells=vals.map(v=>`<td style="${tdBase}background:${bg}">${fmtV(v)}</td>`).join('');
+    rows.push(`<tr style="background:${bg}"><td style="padding:5px 10px;font-size:11px;${pl}${fw}${bt}${stickyCol}background:${bg}">${lbl}</td>${cells}</tr>`);
+  }
+  function subRow(lbl,vals){ dRow(lbl,vals,{hl:true,bold:true}); }
+  function grandRow(lbl,vals){ dRow(lbl,vals,{grand:true,bold:true}); }
+  function chkRow(vals){
+    const tdBase='padding:5px 10px;font-size:10px;text-align:center;font-style:italic;border-top:0.5px solid var(--rule);';
+    const cells=vals.map(v=>{
+      if(v===null) return `<td style="${tdBase}"><span style="color:var(--muted)">—</span></td>`;
+      const ok=Math.abs(v)<1000;
+      const disp=ok?'<span style="color:var(--green)">✓</span>'
+        :`<span style="color:var(--red);font-size:10px">${v<0?'('+Math.round(Math.abs(v)).toLocaleString('en-IN')+')':Math.round(v).toLocaleString('en-IN')}</span>`;
+      return `<td style="${tdBase}">${disp}</td>`;
+    }).join('');
+    rows.push(`<tr><td style="padding:5px 10px;font-size:10px;color:var(--muted);font-style:italic;${stickyCol}background:#fff">Check</td>${cells}</tr>`);
+  }
 
-  // Bank breakdown
-  BTYPES.forEach(t=>{
-    const vals=breakdownByType[t]||{};
-    if(months.some(m=>(vals[m]||0)!==0)) addRow(t,vals,1);
-  });
-  const closingSum={};
-  months.forEach(m=>{closingSum[m]=BTYPES.reduce((a,t)=>a+(breakdownByType[t]?.[m]||0),0);});
-  addRow('Closing Balance',closingSum,1,true);
-  addRow('Check',checkVal,1);
-  trs.push(`<tr><td colspan="${showM?nCols+2:2}" style="height:10px;border-bottom:2px solid var(--rule)"></td></tr>`);
+  // ── 3 TIER ───────────────────────────────────────────────────────────────
+  secRow('3 Tier');
+  dRow('Opening Cash & Cash Equivalents', months.map(m=>cfChain[m].opening));
+  dRow('Acquired Cash', months.map(m=>getLine(m,'Acquired Cash')||0));
+  grandRow('Closing Cash & Cash Equivalents', months.map(m=>cfChain[m].closing));
+  blk();
 
-  // ── CF Activities ─────────────────────────────────────────────────────────
-  CF.structure.forEach((sec,si)=>{
-    const secKey=si===0?'ops':si===1?'inv':'fin';
-    addHdr(sec.section);
-    const inflowSn={};const outflowSn={};
+  // Closing balance breakdown
+  subHdr('Closing Balance');
+  dRow('Cash',            months.map(m=>getClose(m,'Cash')),            {ind:true});
+  dRow('Bank Accounts',   months.map(m=>getClose(m,'Bank Accounts')),   {ind:true});
+  dRow('Deposits',        months.map(m=>getClose(m,'Deposits')),        {ind:true});
+  dRow('Deposits - Sing', months.map(m=>getClose(m,'Deposits - Sing')), {ind:true});
+  dRow('Mutual Fund',     months.map(m=>getClose(m,'Mutual Fund')),     {ind:true});
+  dRow('OD',              months.map(m=>getClose(m,'OD')),              {ind:true});
+  grandRow('Closing Balance', months.map(m=>closingTotal(m)));
+  chkRow(months.map(m=>cfChain[m].closing - closingTotal(m)));
+  blk();
 
-    (sec.inflows||sec.items.filter((_,i)=>i<(sec.inflows?.length||0))||[]).forEach(item=>{
-      const d=agg[item]||{};
-      if(!months.some(m=>(d[m]||0)!==0))return;
-      months.forEach(m=>{inflowSn[m]=(inflowSn[m]||0)+(d[m]||0);});
-      addRow(item,d,1);
-    });
-    // Use inflows/outflows if defined, else split by sign convention
-    const hasInflows=sec.inflows&&sec.inflows.length>0;
-    if(hasInflows){
-      if(months.some(m=>(inflowSn[m]||0)!==0)) addSubt('Cash Receipt',inflowSn,'#d8ecd8');
-      sec.outflows.forEach(item=>{
-        const d=agg[item]||{};
-        if(!months.some(m=>(d[m]||0)!==0))return;
-        months.forEach(m=>{outflowSn[m]=(outflowSn[m]||0)+(d[m]||0);});
-        addRow(item,d,1);
-      });
-      if(months.some(m=>(outflowSn[m]||0)!==0)) addSubt('Cash Paid For',outflowSn,'#f5d8d8');
-    } else {
-      sec.items.forEach(item=>{
-        const d=agg[item]||{};
-        if(!months.some(m=>(d[m]||0)!==0))return;
-        addRow(item,d,1);
-      });
-    }
-    addSubt(`Net Cash Flow from ${sec.section.replace(' Activities','')}`,sectionNet[secKey]);
-    addSep();
-  });
-  addSubt('Net Increase (Decrease) in cash',netCF,'#c8c0b0');
+  // ── Operation Activities ──────────────────────────────────────────────────
+  secRow('Operation Activities');
+  subHdr('Cash Receipts');
+  dRow('Sales Collections',          months.map(m=>getLine(m,'Sales Collections')),                  {ind:true});
+  dRow('Other Operations',           months.map(m=>getLine(m,'Other Operations')),                   {ind:true});
+  subRow('Cash Receipt',             months.map(m=>getLine(m,'Sales Collections')+getLine(m,'Other Operations')));
+  subHdr('Cash Payments');
+  dRow('COGS Related',               months.map(m=>getLine(m,'COGS Related')),                       {ind:true});
+  dRow('Fulfilment & Running Costs', months.map(m=>getLine(m,'Fulfilment and Other Running costs')), {ind:true});
+  dRow('Customer Acquisition Costs', months.map(m=>getLine(m,'Customer Acquisition Costs')),         {ind:true});
+  dRow('Brand Marketing',            months.map(m=>getLine(m,'Brand Marketing')),                    {ind:true});
+  dRow('Royalty',                    months.map(m=>getLine(m,'Royalty')),                            {ind:true});
+  dRow('Salaries',                   months.map(m=>getLine(m,'Salaries')),                           {ind:true});
+  dRow('Overheads',                  months.map(m=>getLine(m,'Overheads')),                          {ind:true});
+  dRow('Management Fees',            months.map(m=>getLine(m,'Management Fees')),                    {ind:true});
+  dRow('Interest',                   months.map(m=>getLine(m,'Interest')),                           {ind:true});
+  dRow('Processing Fee',             months.map(m=>getLine(m,'Processing Fee')),                     {ind:true});
+  dRow('Income Tax',                 months.map(m=>getLine(m,'Income Tax')),                         {ind:true});
+  const OP_OUT_ITEMS=['COGS Related','Fulfilment and Other Running costs','Customer Acquisition Costs',
+    'Brand Marketing','Royalty','Salaries','Overheads','Management Fees','Interest','Processing Fee','Income Tax'];
+  subRow('Cash Paid For', months.map(m=>OP_OUT_ITEMS.reduce((s,i)=>s+(getLine(m,i)||0),0)));
+  const OP_ALL=['Sales Collections','Other Operations',...OP_OUT_ITEMS];
+  grandRow('Net Cash Flow from Operations', months.map(m=>OP_ALL.reduce((s,i)=>s+(getLine(m,i)||0),0)));
+  blk();
 
-  // ── Render ────────────────────────────────────────────────────────────────
-  const stickyTh=`position:sticky;top:0;z-index:2;background:#f1f0ee`;
-  const hdrCells=months.map(m=>`<th class="num" style="${colStyle};${stickyTh}">${m}</th>`).join('');
-  thead.innerHTML=showM
-    ?`<tr><th style="min-width:220px;position:sticky;left:0;top:0;background:#f1f0ee;z-index:3">Line Item</th>${hdrCells}<th class="num" style="${colStyle};${stickyTh};background:#e0ddd6">Total</th></tr>`
-    :`<tr><th style="min-width:220px">Line Item</th><th class="num">Total</th></tr>`;
-  tbody.innerHTML=trs.join('');
+  // ── Investing Activities ──────────────────────────────────────────────────
+  secRow('Investing Activities');
+  subHdr('Cash Receipts');
+  dRow('Sales of Assets',            months.map(m=>getLine(m,'Sales of Assets')),           {ind:true});
+  dRow('Deposits Recovered',         months.map(m=>getLine(m,'Deposits Recovered')),         {ind:true});
+  dRow('Exchange Rate Fluctuation',  months.map(m=>getLine(m,'Exchange Rate Fluctuation')),  {ind:true});
+  const INV_IN=['Sales of Assets','Deposits Recovered','Exchange Rate Fluctuation'];
+  subRow('Cash Receipt', months.map(m=>INV_IN.reduce((s,i)=>s+(getLine(m,i)||0),0)));
+  subHdr('Cash Payments');
+  dRow('Purchase of Assets',         months.map(m=>getLine(m,'Purchase of Assets')),         {ind:true});
+  dRow('CWIP',                       months.map(m=>getLine(m,'CWIP')),                       {ind:true});
+  dRow('Investment in Subsidiary',   months.map(m=>getLine(m,'Investment in Subsidiary')),   {ind:true});
+  dRow('Purchase of Founder Shares', months.map(m=>getLine(m,'Purchase of shares from Founders')),{ind:true});
+  dRow('BTA — Debt',                 months.map(m=>getLine(m,'BTA consideration - Debt')),   {ind:true});
+  dRow('BTA — Equity',               months.map(m=>getLine(m,'BTA consideration - Equity')), {ind:true});
+  const INV_OUT=['Purchase of Assets','CWIP','Investment in Subsidiary',
+    'Purchase of shares from Founders','BTA consideration - Debt','BTA consideration - Equity'];
+  subRow('Cash Paid For', months.map(m=>INV_OUT.reduce((s,i)=>s+(getLine(m,i)||0),0)));
+  const INV_ALL=[...INV_IN,...INV_OUT];
+  grandRow('Net Cash Flow from Investments', months.map(m=>INV_ALL.reduce((s,i)=>s+(getLine(m,i)||0),0)));
+  blk();
 
-  // Make label column sticky after render
-  tbody.querySelectorAll('td.sc').forEach(td=>{
-    td.style.position='sticky';td.style.left='0';td.style.zIndex='1';
-    if(!td.style.background||td.style.background==='')td.style.background='#fff';
-  });
+  // ── Financing Activities ──────────────────────────────────────────────────
+  secRow('Financing Activities');
+  subHdr('Cash Receipts');
+  dRow('Equity Funding',              months.map(m=>getLine(m,'Equity Funding')),                         {ind:true});
+  dRow('Equity Investment — BTA',     months.map(m=>getLine(m,'Equity Investment - BTA')),                {ind:true});
+  dRow('Equity Investment — Internal',months.map(m=>getLine(m,'Equity Investment - Internal')),            {ind:true});
+  dRow('Debt Investment — External',  months.map(m=>getLine(m,'Debt Investment - External')),              {ind:true});
+  dRow('Debt Investment — Internal',  months.map(m=>getLine(m,'Debt Investment - Internal')),              {ind:true});
+  dRow('Debt Repayment Receipts',     months.map(m=>getLine(m,'Debt Repayment Receipts - Internal')),     {ind:true});
+  dRow('Director Loans Receipts',     months.map(m=>getLine(m,'Director Loans Receipts')),                {ind:true});
+  const FIN_IN=['Equity Funding','Equity Investment - BTA','Equity Investment - Internal',
+    'Debt Investment - External','Debt Investment - Internal',
+    'Debt Repayment Receipts - Internal','Director Loans Receipts'];
+  subRow('Cash Receipt', months.map(m=>FIN_IN.reduce((s,i)=>s+(getLine(m,i)||0),0)));
+  subHdr('Cash Payments');
+  dRow('Debt Repayments — External',  months.map(m=>getLine(m,'Debt Repayments - External')),             {ind:true});
+  dRow('Loan — Internal',             months.map(m=>getLine(m,'Loan - Internal')),                        {ind:true});
+  dRow('Debt Repayments — Internal',  months.map(m=>getLine(m,'Debt Repayments - Internal')),             {ind:true});
+  dRow('Director Loans Repayment',    months.map(m=>getLine(m,'Director Loans Repayment')),               {ind:true});
+  dRow('Repurchase of Stock',         months.map(m=>getLine(m,'Repurchase of Stock')),                    {ind:true});
+  const FIN_OUT=['Debt Repayments - External','Loan - Internal','Debt Repayments - Internal',
+    'Director Loans Repayment','Repurchase of Stock'];
+  subRow('Cash Paid For', months.map(m=>FIN_OUT.reduce((s,i)=>s+(getLine(m,i)||0),0)));
+  const FIN_ALL=[...FIN_IN,...FIN_OUT];
+  grandRow('Net Cash Flow from Financing', months.map(m=>FIN_ALL.reduce((s,i)=>s+(getLine(m,i)||0),0)));
+  blk();
+
+  // ── Net Increase / Decrease ───────────────────────────────────────────────
+  const ALL_ITEMS=[...OP_ALL,...INV_ALL,...FIN_ALL];
+  grandRow('Net Increase / (Decrease) in Cash',
+    months.map(m=>ALL_ITEMS.reduce((s,i)=>s+(getLine(m,i)||0),0)));
+
+  // ── Render table ──────────────────────────────────────────────────────────
+  const hdrCells = months.map(m=>`<th style="min-width:${colW}px;padding:7px 10px;text-align:right;font-size:10px;font-weight:700;white-space:nowrap;${stickyHdr}">${m}</th>`).join('');
+  thead.innerHTML=`<tr><th style="min-width:220px;padding:7px 10px;text-align:left;font-size:10px;font-weight:700;${stickyCorner}">Line Item (₹)</th>${hdrCells}</tr>`;
+  tbody.innerHTML=rows.join('');
 }
 
 function renderWaterfall(){

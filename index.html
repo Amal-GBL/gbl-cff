@@ -2538,13 +2538,19 @@ function renderReport(){
   // Freeze first column — listen on window scroll (page scrolls horizontally)
   function freezeFirstCol(){
     const x = window.scrollX;
-    if(x === 0) return;
     const tbl = document.getElementById('rt-scroll');
     if(!tbl) return;
     tbl.querySelectorAll('tr > *:first-child').forEach(cell=>{
       cell.style.position = 'relative';
       cell.style.left = x + 'px';
       cell.style.zIndex = '3';
+      // Ensure background is solid (use computed or fallback to white)
+      if(!cell.style.backgroundColor || cell.style.backgroundColor === 'transparent' || cell.style.backgroundColor === ''){
+        const bg = window.getComputedStyle(cell).backgroundColor;
+        cell.style.backgroundColor = (bg && bg !== 'rgba(0, 0, 0, 0)') ? bg : '#fff';
+      }
+      if(x > 0) cell.style.boxShadow = '2px 0 6px rgba(0,0,0,0.15)';
+      else cell.style.boxShadow = '';
     });
   }
   window.removeEventListener('scroll', window._cffFreeze);

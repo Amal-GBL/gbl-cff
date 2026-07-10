@@ -420,7 +420,7 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
   <div class="sb-logo">
     <div class="sb-brand">GBL Finance</div>
     <div class="sb-title">Cash Flow<br>Consolidation</div>
-    <div class="sb-sub">FY22 → FY27 · Built 10-Jul-2026 07:28</div>
+    <div class="sb-sub">FY22 → FY27 · Built 10-Jul-2026 07:52</div>
   </div>
   <div class="sb-nav">
     <div class="nav-sec">FY27 Workflow</div>
@@ -625,7 +625,7 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
         <div class="pb">
           <div class="alert ai" style="margin-bottom:12px"><span>ℹ️</span><div>
             Find transactions mapped to the wrong CF line. Filter by Brand and/or Grouping label (raw name from brand file), then remap individual rows. Changes take effect immediately in the consolidated report.
-            <strong>IC Loan lines are excluded here</strong> — use the IC Check tab for those.
+            <strong>IC Loan lines <strong>are included</strong> in the remap dropdown — you can remap any transaction to an IC line if needed. The IC Check tab will reflect changes immediately.
           </div></div>
 
           <!-- Filters -->
@@ -2497,9 +2497,11 @@ function renderLineItems(){
   </tr>`;
 
   // Build CF line options once
-  const optBase=CF.structure.flatMap(sec=>
-    sec.items.filter(i=>!IC_LINES_SET.has(i)).map(i=>`<option value="${i}">${i}</option>`)
-  ).join('');
+  // All CF lines available for remapping — including IC lines
+  const optBase=CF.structure.flatMap(sec=>[
+    `<option disabled>─── ${sec.section} ───</option>`,
+    ...sec.items.map(i=>`<option value="${i}">${i}</option>`)
+  ]).join('');
 
   // Render in chunks using requestAnimationFrame to avoid blocking UI
   const CHUNK=50;
@@ -2566,11 +2568,8 @@ function remapLineItem(sel){
   const ci=parseInt(sel.getAttribute('data-ci'));
   const newLine=sel.value;
   if(!newLine||isNaN(ci)||ci<0||ci>=S.consolidated.length) return;
-  if(IC_LINES_SET.has(newLine)){
-    alert('IC loan lines cannot be assigned here. Use the IC Check tab for IC line corrections.');
-    sel.value=S.consolidated[ci].cfLine;// revert
-    return;
-  }
+  // IC lines ARE allowed as remap targets here
+  // If remapping FROM a non-IC line TO an IC line, it will appear in IC check
   S.consolidated[ci].cfLine=newLine;
   S.consolidated[ci].activity=ACT_OF[newLine]||'';
   runChecks();

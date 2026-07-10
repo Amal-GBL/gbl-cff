@@ -938,8 +938,7 @@ function saveSession(){
         rowCount:d.rows?d.rows.length:0
       }]))
     };
-    localStorage.setItem(SESSION_KEY, JSON.stringify(snapshot));
-    // Also push to GitHub so any device can resume
+    // GitHub is the single source of truth
     pushSessionToGitHub(snapshot);
     console.log('Session saved for', CONSOLIDATION_MONTH);
   }catch(e){console.warn('Session save failed:',e);}
@@ -1008,17 +1007,13 @@ function setSyncBadge(text, color){
 }
 
 function hasSavedSession(){
-  try{return !!localStorage.getItem(SESSION_KEY);}catch(e){return false;}
+  return false; // GitHub is single storage — checkForSavedSession handles async fetch
 }
 
 function restoreSession(snap){
   // snap can be passed directly (from GitHub) or read from localStorage
   try{
-    if(!snap){
-      const raw = localStorage.getItem(SESSION_KEY);
-      if(!raw) return false;
-      snap = JSON.parse(raw);
-    }
+    if(!snap) return false; // snap must be passed from GitHub fetch
     S.consolidated = snap.consolidated || [];
     S.months = snap.months || [];
     S.brandList = snap.brandList || [];
@@ -1047,8 +1042,7 @@ function restoreSession(snap){
 }
 
 function clearSession(){
-  try{ localStorage.removeItem(SESSION_KEY); }catch(e){}
-  deleteSessionFromGitHub();
+  deleteSessionFromGitHub(); // GitHub is single storage
 }
 
 async function deleteSessionFromGitHub(){
@@ -1074,22 +1068,11 @@ async function deleteSessionFromGitHub(){
 }
 
 async function checkForSavedSession(){
-  // Primary: localStorage (instant, same browser)
-  if(hasSavedSession()){
-    try{
-      const raw=localStorage.getItem(SESSION_KEY);
-      const snap=JSON.parse(raw);
-      _showSessionBanner(snap, 'local');
-      return;
-    }catch(e){}
-  }
-  // Fallback: GitHub (works on any device/browser)
+  // GitHub is single storage — fetch on every page load
   try{
     setSyncBadge('⟳ Checking cloud…', '#a0b4c8');
     const snap = await fetchSessionFromGitHub();
     if(snap && snap.month === CONSOLIDATION_MONTH){
-      // Write to localStorage so next load on this device is instant
-      try{ localStorage.setItem(SESSION_KEY, JSON.stringify(snap)); }catch(_){}
       _showSessionBanner(snap, 'cloud');
     } else if(snap && snap.month){
       setSyncBadge('☁ ' + snap.month + ' session on cloud', '#888');

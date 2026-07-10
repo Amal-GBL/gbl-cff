@@ -938,7 +938,8 @@ function saveSession(){
         rowCount:d.rows?d.rows.length:0
       }]))
     };
-    // GitHub is the only storage — push directly
+    localStorage.setItem(SESSION_KEY, JSON.stringify(snapshot));
+    // Also push to GitHub so any device can resume
     pushSessionToGitHub(snapshot);
     console.log('Session saved for', CONSOLIDATION_MONTH);
   }catch(e){console.warn('Session save failed:',e);}
@@ -1007,13 +1008,17 @@ function setSyncBadge(text, color){
 }
 
 function hasSavedSession(){
-  return false; // Deprecated — session is GitHub-only; checkForSavedSession is async
+  try{return !!localStorage.getItem(SESSION_KEY);}catch(e){return false;}
 }
 
 function restoreSession(snap){
-  // snap is passed directly — no localStorage
+  // snap can be passed directly (from GitHub) or read from localStorage
   try{
-    if(!snap) return false;
+    if(!snap){
+      const raw = localStorage.getItem(SESSION_KEY);
+      if(!raw) return false;
+      snap = JSON.parse(raw);
+    }
     S.consolidated = snap.consolidated || [];
     S.months = snap.months || [];
     S.brandList = snap.brandList || [];
@@ -1042,7 +1047,7 @@ function restoreSession(snap){
 }
 
 function clearSession(){
-  // Delete session.json from GitHub
+  try{ localStorage.removeItem(SESSION_KEY); }catch(e){}
   deleteSessionFromGitHub();
 }
 
@@ -1069,17 +1074,27 @@ async function deleteSessionFromGitHub(){
 }
 
 async function checkForSavedSession(){
-  // GitHub is the only storage — fetch session.json
+  // Primary: localStorage (instant, same browser)
+  if(hasSavedSession()){
+    try{
+      const raw=localStorage.getItem(SESSION_KEY);
+      const snap=JSON.parse(raw);
+      _showSessionBanner(snap, 'local');
+      return;
+    }catch(e){}
+  }
+  // Fallback: GitHub (works on any device/browser)
   try{
     setSyncBadge('⟳ Checking cloud…', '#a0b4c8');
     const snap = await fetchSessionFromGitHub();
     if(snap && snap.month === CONSOLIDATION_MONTH){
+      // Write to localStorage so next load on this device is instant
+      try{ localStorage.setItem(SESSION_KEY, JSON.stringify(snap)); }catch(_){}
       _showSessionBanner(snap, 'cloud');
     } else if(snap && snap.month){
-      // Session exists but for a different month
       setSyncBadge('☁ ' + snap.month + ' session on cloud', '#888');
     } else {
-      setSyncBadge('No cloud session', '#888');
+      setSyncBadge('', '#a0b4c8');
     }
   }catch(e){ setSyncBadge('', '#a0b4c8'); }
 }
@@ -1097,7 +1112,7 @@ function _showSessionBanner(snap, source){
   }catch(e){}
 }
 
-let _pendingSnap = null; // holds fetched snap until user clicks Resume
+let _pendingSnap = null; // holds cloud snap until user clicks Resume
 
 function resumeSession(){
   const snap=restoreSession(_pendingSnap);

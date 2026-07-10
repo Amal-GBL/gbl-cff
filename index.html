@@ -2844,7 +2844,7 @@ function showPage(page){
     if(nav) nav.classList.toggle('active',p===page);
   });
   const titles={upload:'Upload Brand Files',mapping:'Line Item Mapping',recon:'Reconciliation vs Brand Summary',
-    checks:'Checks & IC Loans',lineitems:'Other Line Items — '+CONSOLIDATION_MONTH,report:'Consolidated Cash Flow Report Test',waterfall:'Cash Waterfall',brands:'Brand Breakdown'};
+    checks:'Checks & IC Loans',lineitems:'Other Line Items — '+CONSOLIDATION_MONTH,report:'Consolidated Cash Flow Report',waterfall:'Cash Waterfall',brands:'Brand Breakdown'};
   document.getElementById('page-title').textContent=titles[page]||page;
   if(page==='report'){populateFilters();renderReport();}
   if(page==='waterfall')renderWaterfall();

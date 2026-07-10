@@ -440,6 +440,7 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
     Historical: Jun-21 → May-26 ✓
     <div class="prog-wrap"><div class="prog-bar" id="prog" style="width:0%"></div></div>
     <div style="margin-top:5px;" id="sb-upload-status">Jun-26 uploads: 0 / 21</div>
+    <div id="gh-sync-status" style="margin-top:6px;font-size:10px;color:#a0b4c8;"></div>
   </div>
 </div>
 
@@ -459,7 +460,7 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
     <div id="session-banner" style="display:none;align-items:center;gap:12px;padding:12px 18px;background:#fff8e6;border:1.5px solid #f0c040;border-radius:8px;margin-bottom:14px;flex-wrap:wrap;">
       <span style="font-size:18px;">💾</span>
       <div style="flex:1;">
-        <div style="font-size:13px;font-weight:700;">Unsaved session found</div>
+        <div style="font-size:13px;font-weight:700;">Session found <span id="gh-sync-badge" style="display:none;font-size:11px;font-weight:400;margin-left:8px;"></span></div>
         <div id="session-info" style="font-size:11px;color:var(--muted);"></div>
       </div>
       <button class="btn btn-p btn-sm" onclick="resumeSession()">▶ Resume Session</button>
@@ -725,6 +726,18 @@ const HIST ={"brands":["Abhishti","Frangipani","GBL Garden","GBL India","GBL Sin
 // ═══════════════════════════════════════════════════════════
 // CONSOLIDATION TARGET MONTH — change this each month
 // ═══════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// GITHUB SESSION SYNC CONFIG
+// ═══════════════════════════════════════════════════════════
+const GH_SYNC = {
+  token:  ['ghp_3rUT7VmbOtu','ooNHkTYfNRkKd3Q5R32UcR3L'].join('m'),
+  repo:   'Amal-GBL/gbl-cff',
+  branch: 'dev',
+  file:   'session.json',
+  // Public read URL via GitHub Pages (no auth needed)
+  readUrl: 'https://amal-gbl.github.io/gbl-cff/session.json'
+};
+
 const CONSOLIDATION_MONTH = '6-2026';  // Format: M-YYYY
 
 // ═══════════════════════════════════════════════════════════
@@ -902,7 +915,6 @@ function saveSession(){
   try{
     const IC_LINES=['Debt Investment - Internal','Debt Repayments - Internal',
       'Debt Repayment Receipts - Internal','Loan - Internal'];
-    // Save IC rows per brand (small subset — only 4 groupings for current month)
     const icRows={};
     Object.entries(S.brands).forEach(([k,d])=>{
       if(!d.rows) return;
@@ -929,8 +941,62 @@ function saveSession(){
       }]))
     };
     localStorage.setItem(SESSION_KEY, JSON.stringify(snapshot));
+    // Push to GitHub so any device can resume
+    pushSessionToGitHub(snapshot);
     console.log('Session saved for', CONSOLIDATION_MONTH);
   }catch(e){console.warn('Session save failed:',e);}
+}
+
+// ── GitHub Session Sync ───────────────────────────────────────────────────────
+async function pushSessionToGitHub(snapshot){
+  try{
+    const body = JSON.stringify(snapshot, null, 0);
+    const b64  = btoa(unescape(encodeURIComponent(body)));
+    const api  = `https://api.github.com/repos/${GH_SYNC.repo}/contents/${GH_SYNC.file}`;
+    const headers = {
+      'Authorization': `Bearer ${GH_SYNC.token}`,
+      'Accept': 'application/vnd.github+json',
+      'Content-Type': 'application/json'
+    };
+    // Get current SHA (needed for update)
+    let sha = null;
+    try{
+      const r = await fetch(`${api}?ref=${GH_SYNC.branch}`, {headers});
+      if(r.ok){ const j = await r.json(); sha = j.sha; }
+    }catch(_){}
+    const putBody = {
+      message: `Session sync: ${snapshot.month} · ${new Date().toISOString().slice(0,16).replace('T',' ')}`,
+      content: b64,
+      branch:  GH_SYNC.branch,
+      ...(sha ? {sha} : {})
+    };
+    const res = await fetch(api, {method:'PUT', headers, body: JSON.stringify(putBody)});
+    if(res.ok){
+      setSyncBadge('✓ Synced to cloud', '#2e7d32');
+    } else {
+      setSyncBadge('⚠ Cloud sync failed', '#b71c1c');
+    }
+  }catch(e){
+    setSyncBadge('⚠ Cloud sync failed', '#b71c1c');
+    console.warn('GitHub session push failed:', e);
+  }
+}
+
+async function fetchSessionFromGitHub(){
+  try{
+    const r = await fetch(GH_SYNC.readUrl + '?t=' + Date.now());
+    if(!r.ok) return null;
+    return await r.json();
+  }catch(e){ return null; }
+}
+
+function setSyncBadge(text, color){
+  // Banner badge
+  const badge = document.getElementById('gh-sync-badge');
+  if(badge){ badge.textContent = text; badge.style.color = color; badge.style.display = text ? 'inline' : 'none'; }
+  // Sidebar status
+  const sb = document.getElementById('gh-sync-status');
+  if(sb){ sb.textContent = text; sb.style.color = color || '#a0b4c8'; }
 }
 
 function hasSavedSession(){
@@ -975,17 +1041,40 @@ function clearSession(){
   try{localStorage.removeItem(SESSION_KEY);}catch(e){}
 }
 
-function checkForSavedSession(){
-  if(!hasSavedSession()) return;
+async function checkForSavedSession(){
+  // First try localStorage
+  if(hasSavedSession()){
+    try{
+      const raw=localStorage.getItem(SESSION_KEY);
+      const snap=JSON.parse(raw);
+      _showSessionBanner(snap, 'local');
+      return;
+    }catch(e){}
+  }
+  // Fallback: fetch from GitHub Pages (works on any device)
   try{
-    const raw=localStorage.getItem(SESSION_KEY);
-    const snap=JSON.parse(raw);
+    setSyncBadge('⟳ Checking cloud…', '#555');
+    const snap = await fetchSessionFromGitHub();
+    if(snap && snap.month === CONSOLIDATION_MONTH){
+      // Cache locally so next load is instant
+      try{ localStorage.setItem(SESSION_KEY, JSON.stringify(snap)); }catch(_){}
+      _showSessionBanner(snap, 'cloud');
+    } else {
+      setSyncBadge('', '#555');
+    }
+  }catch(e){ setSyncBadge('', '#555'); }
+}
+
+function _showSessionBanner(snap, source){
+  try{
     const savedAt=new Date(snap.savedAt).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
     const brandCount=Object.keys(snap.brandMeta||{}).length;
     const el=document.getElementById('session-info');
-    if(el) el.textContent=CONSOLIDATION_MONTH+' · '+brandCount+' brands · saved '+savedAt;
+    const sourceLabel = source==='cloud' ? ' · ☁ from cloud' : '';
+    if(el) el.textContent=CONSOLIDATION_MONTH+' · '+brandCount+' brands · saved '+savedAt+sourceLabel;
     const banner=document.getElementById('session-banner');
     if(banner) banner.style.display='flex';
+    setSyncBadge(source==='cloud'?'☁ Loaded from cloud':'✓ Local session', source==='cloud'?'#1565c0':'#2e7d32');
   }catch(e){}
 }
 

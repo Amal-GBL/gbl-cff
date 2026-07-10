@@ -6,7 +6,9 @@ Single-file HTML tool for consolidating monthly cash flow across 21 GBL portfoli
 Open `index.html` directly in Chrome — no server needed.
 
 ## Live Tool
-Hosted via GitHub Pages: https://amal-gbl.github.io/gbl-cff/
+Self-hosted on EC2 (nginx): https://gbl-cff.duckdns.org/
+
+Dev preview (snapshot of `dev` branch): https://gbl-cff.duckdns.org/dev/
 
 ## Monthly Workflow
 1. Upload Jun-26+ brand files

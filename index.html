@@ -940,8 +940,7 @@ function saveSession(){
         rowCount:d.rows?d.rows.length:0
       }]))
     };
-    localStorage.setItem(SESSION_KEY, JSON.stringify(snapshot));
-    // Push to GitHub so any device can resume
+    // GitHub is the only storage — push directly
     pushSessionToGitHub(snapshot);
     console.log('Session saved for', CONSOLIDATION_MONTH);
   }catch(e){console.warn('Session save failed:',e);}
@@ -1000,14 +999,13 @@ function setSyncBadge(text, color){
 }
 
 function hasSavedSession(){
-  try{return !!localStorage.getItem(SESSION_KEY);}catch(e){return false;}
+  return false; // Deprecated — session is GitHub-only; checkForSavedSession is async
 }
 
-function restoreSession(){
+function restoreSession(snap){
+  // snap is passed directly — no localStorage
   try{
-    const raw = localStorage.getItem(SESSION_KEY);
-    if(!raw) return false;
-    const snap = JSON.parse(raw);
+    if(!snap) return false;
     S.consolidated = snap.consolidated || [];
     S.months = snap.months || [];
     S.brandList = snap.brandList || [];
@@ -1016,21 +1014,19 @@ function restoreSession(){
     S.issues = snap.issues || [];
     S.excludedBrands = snap.excludedBrands || [];
     S.mapping = snap.mapping || {};
-    // Restore brand stubs with IC rows re-populated
+    // Restore brand stubs
     Object.entries(snap.brandMeta||{}).forEach(([k,m])=>{
       S.brands[k] = {displayName:m.displayName,filename:m.filename,
         isDup:m.isDup,rows:[],rowCount:m.rowCount};
     });
-    // Restore IC rows into brand.rows so renderICRemap works
+    // Restore IC rows
     Object.entries(snap.icRows||{}).forEach(([k,rows])=>{
       if(S.brands[k]) S.brands[k].rows = rows;
     });
-    // Also populate brand.rows from consolidated for any brand not covered by icRows
-    // so row counts and IC check work correctly
+    // Populate brand.rows from consolidated
     (snap.consolidated||[]).forEach(r=>{
       const d=S.brands[r.brand];
-      if(!d)return;
-      // Only add if not already present from icRows
+      if(!d) return;
       if(!d.rows.find(x=>x._uid===r._uid)) d.rows.push(r);
     });
     return snap;
@@ -1038,48 +1034,65 @@ function restoreSession(){
 }
 
 function clearSession(){
-  try{localStorage.removeItem(SESSION_KEY);}catch(e){}
+  // Delete session.json from GitHub
+  deleteSessionFromGitHub();
+}
+
+async function deleteSessionFromGitHub(){
+  try{
+    const api = `https://api.github.com/repos/${GH_SYNC.repo}/contents/${GH_SYNC.file}`;
+    const headers = {
+      'Authorization': `Bearer ${GH_SYNC.token}`,
+      'Accept': 'application/vnd.github+json',
+      'Content-Type': 'application/json'
+    };
+    // Get current SHA first
+    const r = await fetch(`${api}?ref=${GH_SYNC.branch}`, {headers});
+    if(!r.ok) return; // Nothing to delete
+    const j = await r.json();
+    await fetch(api, {method:'DELETE', headers, body: JSON.stringify({
+      message: 'Clear session: month baked in',
+      sha: j.sha,
+      branch: GH_SYNC.branch
+    })});
+    setSyncBadge('✓ Session cleared', '#2e7d32');
+    console.log('session.json deleted from GitHub');
+  }catch(e){ console.warn('clearSession GitHub failed:', e); }
 }
 
 async function checkForSavedSession(){
-  // First try localStorage
-  if(hasSavedSession()){
-    try{
-      const raw=localStorage.getItem(SESSION_KEY);
-      const snap=JSON.parse(raw);
-      _showSessionBanner(snap, 'local');
-      return;
-    }catch(e){}
-  }
-  // Fallback: fetch from GitHub Pages (works on any device)
+  // GitHub is the only storage — fetch session.json
   try{
-    setSyncBadge('⟳ Checking cloud…', '#555');
+    setSyncBadge('⟳ Checking cloud…', '#a0b4c8');
     const snap = await fetchSessionFromGitHub();
     if(snap && snap.month === CONSOLIDATION_MONTH){
-      // Cache locally so next load is instant
-      try{ localStorage.setItem(SESSION_KEY, JSON.stringify(snap)); }catch(_){}
       _showSessionBanner(snap, 'cloud');
+    } else if(snap && snap.month){
+      // Session exists but for a different month
+      setSyncBadge('☁ ' + snap.month + ' session on cloud', '#888');
     } else {
-      setSyncBadge('', '#555');
+      setSyncBadge('No cloud session', '#888');
     }
-  }catch(e){ setSyncBadge('', '#555'); }
+  }catch(e){ setSyncBadge('', '#a0b4c8'); }
 }
 
 function _showSessionBanner(snap, source){
   try{
+    _pendingSnap = snap; // store for resumeSession()
     const savedAt=new Date(snap.savedAt).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
     const brandCount=Object.keys(snap.brandMeta||{}).length;
     const el=document.getElementById('session-info');
-    const sourceLabel = source==='cloud' ? ' · ☁ from cloud' : '';
-    if(el) el.textContent=CONSOLIDATION_MONTH+' · '+brandCount+' brands · saved '+savedAt+sourceLabel;
+    if(el) el.textContent=CONSOLIDATION_MONTH+' · '+brandCount+' brands · saved '+savedAt+' · ☁ cloud';
     const banner=document.getElementById('session-banner');
     if(banner) banner.style.display='flex';
-    setSyncBadge(source==='cloud'?'☁ Loaded from cloud':'✓ Local session', source==='cloud'?'#1565c0':'#2e7d32');
+    setSyncBadge('☁ Session ready', '#1565c0');
   }catch(e){}
 }
 
+let _pendingSnap = null; // holds fetched snap until user clicks Resume
+
 function resumeSession(){
-  const snap=restoreSession();
+  const snap=restoreSession(_pendingSnap);
   if(!snap){alert('Could not restore session. Please re-upload files.');return;}
   populateFilters();
   renderCheckUI();renderKPIs();renderReport();renderWaterfall();renderBrands();
@@ -1400,16 +1413,7 @@ async function parseFile(file){
       const found=ALL_STD.find(s=>s.toLowerCase()===lo);
       m[g]=found||null;
     });
-    // ── Load saved mappings from localStorage and merge ──────
-    try{
-      const saved=JSON.parse(localStorage.getItem('gbl_map_'+displayName)||'{}');
-      Object.keys(saved).forEach(grp=>{
-        // Only apply saved mapping if this grouping exists in current file
-        if(m.hasOwnProperty(grp) && saved[grp]){
-          m[grp]=saved[grp];
-        }
-      });
-    }catch(e){}
+    // Mappings come from session snapshot (S.mapping) — no localStorage needed
     S.mapping[brand]=m;
 
     // ── Register brand ──────────────────────────────────────
@@ -1595,13 +1599,7 @@ function onMapChange(sel){
     meta.innerHTML=(u>0?`<span class="badge br">${u} unmapped</span>`:`<span class="badge bg">✓ Mapped</span>`)+`<span style="font-size:12px">${arr}</span>`;}
   // Save this mapping to localStorage immediately
   const displayName=S.brands[brand]?.displayName||brand;
-  if(val&&val!==null){
-    try{
-      const saved=JSON.parse(localStorage.getItem('gbl_map_'+displayName)||'{}');
-      saved[raw]=val;
-      localStorage.setItem('gbl_map_'+displayName,JSON.stringify(saved));
-    }catch(e){}
-  }
+  // Mapping saved in session snapshot via saveSession()
   renderGrid();
 }
 
@@ -1615,11 +1613,7 @@ function consolidate(){
   // Save all confirmed mappings to localStorage
   Object.entries(S.mapping).forEach(([brand,m])=>{
     const displayName=S.brands[brand]?.displayName||brand;
-    try{
-      const toSave={};
-      Object.entries(m).forEach(([grp,val])=>{if(val)toSave[grp]=val;});
-      localStorage.setItem('gbl_map_'+displayName,JSON.stringify(toSave));
-    }catch(e){}
+    // Mapping saved in session snapshot
   });
   S.consolidated=[];
   // Phase 1: build recon first to know which brands pass
@@ -1990,7 +1984,7 @@ function remapICLine(sel){
   if(S.mapping[brand])S.mapping[brand][grp]=newLine;
   // Save to localStorage
   const nm=(S.brands[brand]?.displayName)||brand;
-  try{const saved=JSON.parse(localStorage.getItem('gbl_map_'+nm)||'{}');saved[grp]=newLine;localStorage.setItem('gbl_map_'+nm,JSON.stringify(saved));}catch(e){}
+  // Mapping update saved via saveSession()
   // Re-run consolidation rows for this brand
   S.consolidated=S.consolidated.filter(r=>!(r.brand===brand&&r.grouping===grp));
   const d=S.brands[brand];
@@ -2912,11 +2906,13 @@ function changePin(){
   CFO_PIN=nw;localStorage.setItem('gbl_cfo_pin',nw);msg.style.color='var(--green)';msg.textContent='✓ PIN updated.';setTimeout(closeSettings,1500);
 }
 function clearSavedMappings(){
+  // Mappings are stored only in session snapshot — clear S.mapping and re-save
   if(!confirm('Clear all saved brand mappings? They will need to be re-mapped on next upload.')) return;
-  const keys=Object.keys(localStorage).filter(k=>k.startsWith('gbl_map_'));
-  keys.forEach(k=>localStorage.removeItem(k));
+  const count = Object.keys(S.mapping||{}).length;
+  S.mapping = {};
+  saveSession();
   const el=document.getElementById('saved-map-count');
-  if(el)el.textContent='✓ Cleared '+keys.length+' brand mapping(s).';
+  if(el)el.textContent='✓ Cleared '+count+' brand mapping(s).';
 }
 function showSavedMapCount(){
   const el=document.getElementById('saved-map-count');

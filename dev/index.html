@@ -949,29 +949,48 @@ async function pushSessionToGitHub(snapshot){
   try{
     const body = JSON.stringify(snapshot, null, 0);
     const b64  = btoa(unescape(encodeURIComponent(body)));
-    const api  = `https://api.github.com/repos/${GH_SYNC.repo}/contents/${GH_SYNC.file}`;
-    const headers = {
+    const hdrs = {
       'Authorization': `Bearer ${GH_SYNC.token}`,
       'Accept': 'application/vnd.github+json',
       'Content-Type': 'application/json'
     };
-    // Get current SHA (needed for update)
-    let sha = null;
-    try{
-      const r = await fetch(`${api}?ref=${GH_SYNC.branch}`, {headers});
-      if(r.ok){ const j = await r.json(); sha = j.sha; }
-    }catch(_){}
-    const putBody = {
-      message: `Session sync: ${snapshot.month} · ${new Date().toISOString().slice(0,16).replace('T',' ')}`,
-      content: b64,
-      branch:  GH_SYNC.branch,
-      ...(sha ? {sha} : {})
-    };
-    const res = await fetch(api, {method:'PUT', headers, body: JSON.stringify(putBody)});
-    if(res.ok){
+    const base = `https://api.github.com/repos/${GH_SYNC.repo}`;
+
+    // Step 1: Create blob
+    const blobR = await fetch(`${base}/git/blobs`, {method:'POST', headers:hdrs,
+      body: JSON.stringify({content: b64, encoding: 'base64'})});
+    if(!blobR.ok) throw new Error('Blob create failed: '+blobR.status);
+    const {sha: blobSha} = await blobR.json();
+
+    // Step 2: Get current HEAD ref
+    const refR = await fetch(`${base}/git/ref/heads/${GH_SYNC.branch}`, {headers:hdrs});
+    if(!refR.ok) throw new Error('Ref fetch failed: '+refR.status);
+    const refSha = (await refR.json()).object.sha;
+
+    // Step 3: Get current commit tree
+    const commitR = await fetch(`${base}/git/commits/${refSha}`, {headers:hdrs});
+    const treeSha = (await commitR.json()).tree.sha;
+
+    // Step 4: Create new tree
+    const newTreeR = await fetch(`${base}/git/trees`, {method:'POST', headers:hdrs,
+      body: JSON.stringify({base_tree: treeSha,
+        tree:[{path: GH_SYNC.file, mode:'100644', type:'blob', sha: blobSha}]})});
+    const newTreeSha = (await newTreeR.json()).sha;
+
+    // Step 5: Create commit
+    const newCommitR = await fetch(`${base}/git/commits`, {method:'POST', headers:hdrs,
+      body: JSON.stringify({
+        message: `Session sync: ${snapshot.month} · ${new Date().toISOString().slice(0,16).replace('T',' ')}`,
+        tree: newTreeSha, parents:[refSha]})});
+    const newCommitSha = (await newCommitR.json()).sha;
+
+    // Step 6: Update ref
+    const patchR = await fetch(`${base}/git/refs/heads/${GH_SYNC.branch}`, {method:'PATCH', headers:hdrs,
+      body: JSON.stringify({sha: newCommitSha, force: false})});
+    if(patchR.ok){
       setSyncBadge('✓ Synced to cloud', '#2e7d32');
     } else {
-      setSyncBadge('⚠ Cloud sync failed', '#b71c1c');
+      throw new Error('Ref patch failed: '+patchR.status);
     }
   }catch(e){
     setSyncBadge('⚠ Cloud sync failed', '#b71c1c');
@@ -981,19 +1000,14 @@ async function pushSessionToGitHub(snapshot){
 
 async function fetchSessionFromGitHub(){
   try{
-    const api = `https://api.github.com/repos/${GH_SYNC.repo}/contents/${GH_SYNC.file}?ref=${GH_SYNC.branch}`;
-    const r = await fetch(api, {
-      headers: {
-        'Authorization': `Bearer ${GH_SYNC.token}`,
-        'Accept': 'application/vnd.github+json'
-      }
+    // Use raw URL — works for any file size, no auth needed for public repos
+    // Add cache-bust so we always get latest
+    const rawUrl = `https://raw.githubusercontent.com/${GH_SYNC.repo}/${GH_SYNC.branch}/${GH_SYNC.file}?t=${Date.now()}`;
+    const r = await fetch(rawUrl, {
+      headers: { 'Authorization': `Bearer ${GH_SYNC.token}` }
     });
     if(!r.ok) return null;
-    const meta = await r.json();
-    if(!meta.content) return null;
-    // GitHub returns base64-encoded content
-    const decoded = decodeURIComponent(escape(atob(meta.content.replace(/\n/g,''))));
-    return JSON.parse(decoded);
+    return await r.json();
   }catch(e){ console.warn('fetchSessionFromGitHub failed:', e); return null; }
 }
 
@@ -1047,21 +1061,34 @@ function clearSession(){
 
 async function deleteSessionFromGitHub(){
   try{
-    const api = `https://api.github.com/repos/${GH_SYNC.repo}/contents/${GH_SYNC.file}`;
-    const headers = {
+    const hdrs = {
       'Authorization': `Bearer ${GH_SYNC.token}`,
       'Accept': 'application/vnd.github+json',
       'Content-Type': 'application/json'
     };
-    // Get current SHA first
-    const r = await fetch(`${api}?ref=${GH_SYNC.branch}`, {headers});
-    if(!r.ok) return; // Nothing to delete
-    const j = await r.json();
-    await fetch(api, {method:'DELETE', headers, body: JSON.stringify({
-      message: 'Clear session: month baked in',
-      sha: j.sha,
-      branch: GH_SYNC.branch
-    })});
+    const base = `https://api.github.com/repos/${GH_SYNC.repo}`;
+
+    // Get current HEAD — use git tree to find session.json blob SHA
+    const refR = await fetch(`${base}/git/ref/heads/${GH_SYNC.branch}`, {headers:hdrs});
+    if(!refR.ok) return;
+    const refSha = (await refR.json()).object.sha;
+    const commitR = await fetch(`${base}/git/commits/${refSha}`, {headers:hdrs});
+    const treeSha = (await commitR.json()).tree.sha;
+
+    // Create new tree without session.json (delete = set sha to null)
+    const newTreeR = await fetch(`${base}/git/trees`, {method:'POST', headers:hdrs,
+      body: JSON.stringify({base_tree: treeSha,
+        tree:[{path: GH_SYNC.file, mode:'100644', type:'blob', sha: null}]})});
+    if(!newTreeR.ok) return;
+    const newTreeSha = (await newTreeR.json()).sha;
+
+    const newCommitR = await fetch(`${base}/git/commits`, {method:'POST', headers:hdrs,
+      body: JSON.stringify({message:'Clear session: month baked in', tree:newTreeSha, parents:[refSha]})});
+    const newCommitSha = (await newCommitR.json()).sha;
+
+    await fetch(`${base}/git/refs/heads/${GH_SYNC.branch}`, {method:'PATCH', headers:hdrs,
+      body: JSON.stringify({sha: newCommitSha, force:false})});
+
     setSyncBadge('✓ Session cleared', '#2e7d32');
     console.log('session.json deleted from GitHub');
   }catch(e){ console.warn('clearSession GitHub failed:', e); }

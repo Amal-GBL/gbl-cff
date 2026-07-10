@@ -557,6 +557,10 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
 
     <!-- ── CHECKS ── -->
     <div id="page-checks" class="hidden">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:8px;gap:8px;">
+        <button class="btn btn-o btn-sm" onclick="showPage('mapping')" title="Go back to mapping to remove/re-upload a brand">← Mapping</button>
+        <button class="btn btn-p btn-sm" onclick="requireAuth(()=>{consolidate();showPage('checks');})" title="Re-run consolidation — preserves IC fixes already done">↺ Re-consolidate</button>
+      </div>
       <div class="cg" id="check-grid" style="margin-bottom:14px;"></div>
       <div class="panel">
         <div class="ph"><div class="pt">IC Loans Check — Group Level (Jun-26)</div></div>
@@ -1761,9 +1765,16 @@ function consolidate(){
   if(Object.entries(S.mapping).some(([b,m])=>!S.brands[b]?.isDup&&Object.values(m).some(v=>v===null))){
     alert('Some groupings still unmapped (red). Assign, mark Structural, or Ignore before proceeding.');return;
   }
-  // Save all confirmed mappings to localStorage
+  // Preserve any IC fixes (cfLine overrides) already made in current session
+  const icFixes={};
+  S.consolidated.forEach(r=>{
+    if(r._uid && r.cfLine !== (S.mapping[r.brand]?.[r.grouping])){
+      icFixes[r._uid]=r.cfLine; // preserve manual override
+    }
+  });
+
+  // Save all confirmed mappings
   Object.entries(S.mapping).forEach(([brand,m])=>{
-    const displayName=S.brands[brand]?.displayName||brand;
     // Mapping saved in session snapshot
   });
   S.consolidated=[];
@@ -1789,6 +1800,13 @@ function consolidate(){
   });
   S.months=[...new Set(S.consolidated.map(r=>r.month))].sort(sortM);
   S.brandList=[...new Set(S.consolidated.map(r=>r.brand))].sort();
+
+  // Re-apply any IC fixes that were previously made
+  if(Object.keys(icFixes).length){
+    S.consolidated.forEach(r=>{ if(r._uid && icFixes[r._uid]) r.cfLine=icFixes[r._uid]; });
+    console.log(`Re-applied ${Object.keys(icFixes).length} IC fixes`);
+  }
+
   populateFilters();runChecks();
   markStep(2,'done');markStep(3,'active');showPage('recon');renderRecon();
 }

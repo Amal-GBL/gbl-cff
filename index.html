@@ -1000,37 +1000,37 @@ async function pushSessionToGitHub(snapshot){
 
 async function fetchSessionFromGitHub(){
   try{
+    // First try local path (served by Nginx from same origin — fast, no CORS)
+    const localR = await fetch('/dev/session.json?t='+Date.now());
+    if(localR.ok){
+      const snap = await localR.json();
+      if(snap && snap.month) return snap;
+    }
+  }catch(_){}
+  try{
+    // Fallback: GitHub blob API (for non-EC2 environments)
     const hdrs = {
       'Authorization': `Bearer ${GH_SYNC.token}`,
       'Accept': 'application/vnd.github+json'
     };
     const base = `https://api.github.com/repos/${GH_SYNC.repo}`;
-
-    // Step 1: Get the blob SHA of session.json from the tree
     const refR = await fetch(`${base}/git/ref/heads/${GH_SYNC.branch}`, {headers:hdrs});
     if(!refR.ok) return null;
     const refSha = (await refR.json()).object.sha;
-
-    // Step 2: Get commit tree
     const commitR = await fetch(`${base}/git/commits/${refSha}`, {headers:hdrs});
     if(!commitR.ok) return null;
     const treeSha = (await commitR.json()).tree.sha;
-
-    // Step 3: Get tree listing to find session.json blob SHA
     const treeR = await fetch(`${base}/git/trees/${treeSha}`, {headers:hdrs});
     if(!treeR.ok) return null;
     const tree = await treeR.json();
     const entry = tree.tree.find(t => t.path === GH_SYNC.file);
     if(!entry) return null;
-
-    // Step 4: Fetch blob directly — works for any size, returns base64
     const blobR = await fetch(`${base}/git/blobs/${entry.sha}`, {
       headers: {'Authorization': `Bearer ${GH_SYNC.token}`, 'Accept': 'application/vnd.github+json'}
     });
     if(!blobR.ok) return null;
     const blob = await blobR.json();
     if(!blob.content) return null;
-
     const decoded = decodeURIComponent(escape(atob(blob.content.replace(/\n/g,''))));
     return JSON.parse(decoded);
   }catch(e){ console.warn('fetchSessionFromGitHub failed:', e); return null; }

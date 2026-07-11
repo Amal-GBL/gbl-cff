@@ -960,10 +960,22 @@ function renderCorrections(){
 
   const allBrands = HIST.brands || [];
 
-  // Build consolidated brand set from session (either live or pending snap)
+  // Use live session if resumed, else use pending snap, else show loading
   const snap = _pendingSnap || null;
-  const snapConsolidated = snap ? (snap.consolidated || []) : [];
+  const snapConsolidated = S.consolidated.length > 0
+    ? S.consolidated
+    : (snap ? (snap.consolidated || []) : []);
   const snapBrandMeta = snap ? (snap.brandMeta || {}) : {};
+
+  // If nothing available yet, show loading
+  if(snapConsolidated.length === 0 && Object.keys(snapBrandMeta).length === 0 && S.consolidated.length === 0){
+    el.innerHTML = `<div class="panel"><div class="pb" style="padding:32px;text-align:center;color:var(--muted);font-size:13px;">
+      ${snap === null ? '⟳ Loading session data...' : 'No session found. Upload brand files first.'}
+    </div></div>`;
+    // If snap is still loading, retry in 1s
+    if(snap === null) setTimeout(()=>{ if(document.getElementById('page-corrections') && !document.getElementById('page-corrections').classList.contains('hidden')) renderCorrections(); }, 1000);
+    return;
+  }
 
   // Brands that have rows in consolidated (from session OR live S.consolidated)
   const consolidatedBrands = new Set();
@@ -1434,6 +1446,9 @@ async function checkForSavedSession(){
     if(snap && snap.month === CONSOLIDATION_MONTH){
       _pendingSnap = snap;
       _showSessionBanner(snap, 'cloud');
+      // If corrections page is open, re-render now that snap is available
+      const corrPage = document.getElementById('page-corrections');
+      if(corrPage && !corrPage.classList.contains('hidden')) renderCorrections();
     } else if(snap && snap.month){
       setSyncBadge('☁ ' + snap.month + ' session on cloud', '#888');
     } else {

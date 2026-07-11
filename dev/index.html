@@ -428,6 +428,7 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
     <div class="nav-item" onclick="showPage('recon')" id="nav-recon"><span class="nav-icon">🔁</span> Recon vs Summary</div>
     <div class="nav-item" onclick="showPage('checks')" id="nav-checks"><span class="nav-icon">✅</span> Checks & IC Loans</div>
     <div class="nav-item" onclick="showPage('lineitems')" id="nav-lineitems"><span class="nav-icon">🔍</span> Other Line Items</div>
+    <div class="nav-item" onclick="showPage('corrections')" id="nav-corrections"><span class="nav-icon">✏️</span> Corrections</div>
     <div class="nav-sec">Admin</div>
     <div class="nav-item" onclick="openSettings()" id="nav-settings"><span class="nav-icon">⚙</span> CFO Settings</div>
     <div class="nav-sec">Reports</div>
@@ -662,6 +663,9 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
           </div>
         </div>
       </div>
+
+    <!-- CORRECTIONS PAGE -->
+    <div id="page-corrections" class="hidden"></div>
 
       <!-- Month export -->
       <div class="panel">
@@ -945,7 +949,241 @@ function saveSession(){
   }catch(e){console.warn('Session save failed:',e);}
 }
 
-// ── Mapping persistence (survives fresh sessions) ────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// CORRECTIONS PAGE
+// ═══════════════════════════════════════════════════════════
+let _correctionPendingFiles = []; // files dropped on corrections page
+
+function renderCorrections(){
+  const el = document.getElementById('page-corrections');
+  if(!el) return;
+
+  const allBrands = HIST.brands || [];
+  const consolidatedBrands = new Set(
+    S.consolidated.map(r => r.brand.replace(/__dup__\w+$/, ''))
+  );
+  // Also include brands from S.brands (stub or fresh)
+  Object.entries(S.brands).forEach(([k,d]) => {
+    consolidatedBrands.add((d.displayName || k).replace(/__dup__\w+$/, ''));
+  });
+
+  const pendingReupload = new Set(
+    Object.entries(S.brands)
+      .filter(([k,d]) => d._pendingCorrection)
+      .map(([k,d]) => d.displayName || k)
+  );
+
+  // Brand rows
+  const rows = allBrands.map(brand => {
+    const inSession = consolidatedBrands.has(brand);
+    const pending = pendingReupload.has(brand);
+    // Find the brand key in S.brands
+    const brandKey = Object.keys(S.brands).find(k =>
+      (S.brands[k].displayName || k.replace(/__dup__\w+$/,'')) === brand
+    );
+    const rowCount = S.consolidated.filter(r =>
+      r.brand.replace(/__dup__\w+$/, '') === brand
+    ).length;
+
+    let statusBadge, actionBtn;
+    if(pending){
+      statusBadge = `<span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600;background:#fff3e0;color:#e65100;">⟳ Pending Re-upload</span>`;
+      actionBtn = `<button onclick="cancelCorrection('${brand}')" style="padding:4px 12px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid #ccc;background:#fff;color:#555;">Cancel</button>`;
+    } else if(inSession){
+      statusBadge = `<span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600;background:#e8f5e9;color:#2e7d32;">✓ Consolidated${rowCount ? ' ('+rowCount+' rows)' : ''}</span>`;
+      actionBtn = `<button onclick="markForCorrection('${brand}')" style="padding:4px 12px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;border:1.5px solid #d84315;background:#fff;color:#d84315;">Remove & Re-upload</button>`;
+    } else {
+      statusBadge = `<span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600;background:#f5f5f5;color:#888;">— Not uploaded</span>`;
+      actionBtn = `<span style="font-size:11px;color:#aaa;">Upload via main flow</span>`;
+    }
+
+    return `<tr style="border-bottom:1px solid var(--rule);">
+      <td style="padding:9px 14px;font-size:12px;font-weight:500;">${brand}</td>
+      <td style="padding:9px 14px;">${statusBadge}</td>
+      <td style="padding:9px 14px;text-align:right;">${actionBtn}</td>
+    </tr>`;
+  }).join('');
+
+  // Pending re-upload drop zone
+  const hasPending = pendingReupload.size > 0;
+  const uploadSection = hasPending ? `
+    <div class="panel" style="margin-top:16px;">
+      <div class="ph">
+        <div class="pt">Re-upload Files (${pendingReupload.size} brand${pendingReupload.size>1?'s':''} pending)</div>
+        <div style="font-size:11px;color:var(--muted);">Upload corrected files for: <strong>${[...pendingReupload].join(', ')}</strong></div>
+      </div>
+      <div class="pb">
+        <div id="corr-drop" onclick="document.getElementById('corr-file-input').click()"
+          style="border:2px dashed var(--rule);border-radius:8px;padding:24px;text-align:center;cursor:pointer;margin-bottom:12px;transition:background .15s;"
+          ondragover="event.preventDefault();this.style.background='#f0f4ff';"
+          ondragleave="this.style.background='';"
+          ondrop="event.preventDefault();this.style.background='';handleCorrectionDrop(event.dataTransfer.files);">
+          <div style="font-size:28px;margin-bottom:6px;">📂</div>
+          <div style="font-size:13px;font-weight:600;">Drop files here or click to select</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;">One file per brand · xlsb / xlsx</div>
+        </div>
+        <input type="file" id="corr-file-input" multiple accept=".xlsb,.xlsx" style="display:none"
+          onchange="handleCorrectionDrop(this.files)">
+        <div id="corr-file-list" style="margin-bottom:12px;"></div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;">
+          <button onclick="cancelAllCorrections()" style="padding:6px 16px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #ccc;background:#fff;color:#555;">Cancel All</button>
+          <button onclick="requireAuth(runCorrections)" id="corr-run-btn" disabled
+            style="padding:6px 18px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;border:none;background:#2e6b9e;color:#fff;opacity:0.5;">
+            ↺ Re-consolidate
+          </button>
+        </div>
+      </div>
+    </div>` : '';
+
+  el.innerHTML = `
+    <div class="panel">
+      <div class="ph">
+        <div class="pt">Jun-26 Brand Status</div>
+        <div style="font-size:11px;color:var(--muted);">Select brands to remove and re-upload with corrected files</div>
+      </div>
+      <div class="pb" style="padding:0;">
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="background:#f8f7f4;border-bottom:2px solid var(--rule);">
+              <th style="padding:8px 14px;text-align:left;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);">Brand</th>
+              <th style="padding:8px 14px;text-align:left;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);">Status</th>
+              <th style="padding:8px 14px;text-align:right;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);">Action</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>
+    ${uploadSection}`;
+}
+
+function markForCorrection(brand){
+  if(!confirm(`Remove ${brand} from the consolidation?\n\nTheir data will be removed and you can re-upload a corrected file below.\n\nAll other brands and IC fixes remain untouched.`)) return;
+
+  // Purge consolidated rows for this brand
+  S.consolidated = S.consolidated.filter(r =>
+    r.brand.replace(/__dup__\w+$/, '') !== brand
+  );
+  // Mark brand stub as pending correction
+  const key = Object.keys(S.brands).find(k =>
+    (S.brands[k].displayName || k.replace(/__dup__\w+$/,'')) === brand
+  );
+  if(key){
+    S.brands[key]._pendingCorrection = true;
+    S.brands[key].rows = [];
+  } else {
+    // Brand not in S.brands yet — add a stub
+    S.brands[brand] = {displayName:brand, filename:'', isDup:false, rows:[], _pendingCorrection:true, brandSummary:{}};
+    if(!S.mapping[brand]) S.mapping[brand] = {};
+  }
+  // Re-run checks to reflect removal
+  runChecks();
+  renderCheckUI();renderKPIs();renderReport();
+  saveSession();
+  renderCorrections();
+}
+
+function cancelCorrection(brand){
+  const key = Object.keys(S.brands).find(k =>
+    (S.brands[k].displayName || k.replace(/__dup__\w+$/,'')) === brand
+  );
+  if(key) delete S.brands[key]._pendingCorrection;
+  _correctionPendingFiles = _correctionPendingFiles.filter(f => f._brand !== brand);
+  renderCorrections();
+}
+
+function cancelAllCorrections(){
+  Object.values(S.brands).forEach(d => delete d._pendingCorrection);
+  _correctionPendingFiles = [];
+  renderCorrections();
+}
+
+function handleCorrectionDrop(files){
+  const accepted = [...files].filter(f => f.name.match(/\.(xlsb|xlsx)$/i));
+  accepted.forEach(f => {
+    // Remove duplicate of same file
+    _correctionPendingFiles = _correctionPendingFiles.filter(e => e.name !== f.name);
+    _correctionPendingFiles.push(f);
+  });
+  renderCorrectionFileList();
+}
+
+function renderCorrectionFileList(){
+  const el = document.getElementById('corr-file-list');
+  const btn = document.getElementById('corr-run-btn');
+  if(!el) return;
+  if(_correctionPendingFiles.length === 0){
+    el.innerHTML = '';
+    if(btn) {btn.disabled=true; btn.style.opacity='0.5';}
+    return;
+  }
+  el.innerHTML = _correctionPendingFiles.map((f,i) =>
+    `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--rule);font-size:12px;">
+      <span style="flex:1;">📄 ${f.name}</span>
+      <button onclick="_correctionPendingFiles.splice(${i},1);renderCorrectionFileList();"
+        style="border:none;background:none;color:var(--red);cursor:pointer;font-size:13px;">✕</button>
+    </div>`
+  ).join('');
+  if(btn) {btn.disabled=false; btn.style.opacity='1';}
+}
+
+async function runCorrections(){
+  if(_correctionPendingFiles.length === 0){
+    alert('Please drop the corrected files first.');return;
+  }
+  const pendingBrands = Object.entries(S.brands)
+    .filter(([k,d]) => d._pendingCorrection)
+    .map(([k,d]) => d.displayName || k);
+
+  const btn = document.getElementById('corr-run-btn');
+  if(btn){btn.disabled=true;btn.textContent='Processing...';}
+
+  let processed = 0;
+  for(const file of _correctionPendingFiles){
+    try{
+      await parseFile(file); // reuse existing upload parser
+      processed++;
+    }catch(e){ console.error('Error processing', file.name, e); }
+  }
+
+  if(processed === 0){
+    alert('No files could be processed. Please check the file format.');
+    if(btn){btn.disabled=false;btn.textContent='↺ Re-consolidate';}
+    return;
+  }
+
+  // Clear pending flags and files
+  Object.values(S.brands).forEach(d => delete d._pendingCorrection);
+  _correctionPendingFiles = [];
+
+  // Run mapping auto-apply for newly uploaded brands (using saved S.mapping)
+  Object.entries(S.brands).forEach(([key,d]) => {
+    if(!d.rows || d.rows.length === 0) return;
+    if(!S.mapping[key]) S.mapping[key] = {};
+    d.rows.forEach(r => {
+      if(S.mapping[key][r.grouping] === undefined){
+        // Try to find mapping from saved mapping.json (already loaded into S.mapping)
+        S.mapping[key][r.grouping] = null; // unmapped - user will need to handle
+      }
+    });
+  });
+
+  // Check if any unmapped groupings remain
+  const hasUnmapped = Object.entries(S.mapping).some(([b,m]) =>
+    S.brands[b]?.rows?.length > 0 && Object.values(m).some(v => v === null)
+  );
+
+  if(hasUnmapped){
+    alert('Some groupings in the new files need mapping. Redirecting to Map by Brand.');
+    showPage('mapping');
+    return;
+  }
+
+  // Run consolidation (additive — preserves other brands)
+  consolidate();
+  if(btn){btn.disabled=false;btn.textContent='↺ Re-consolidate';}
+}
+
 async function loadMappingFromGitHub(){
   try{
     const hdrs={'Authorization':`Bearer ${GH_SYNC.token}`,'Accept':'application/vnd.github+json'};
@@ -3065,20 +3303,23 @@ function populateFilters(){
 }
 
 function showPage(page){
-  ['upload','mapping','recon','checks','lineitems','report','waterfall','brands'].forEach(p=>{
+  ['upload','mapping','recon','checks','lineitems','corrections','report','waterfall','brands'].forEach(p=>{
     const pg=document.getElementById(`page-${p}`);
     if(pg) pg.classList.toggle('hidden',p!==page);
     const nav=document.getElementById(`nav-${p}`);
     if(nav) nav.classList.toggle('active',p===page);
   });
   const titles={upload:'Upload Brand Files',mapping:'Line Item Mapping',recon:'Reconciliation vs Brand Summary',
-    checks:'Checks & IC Loans',lineitems:'Other Line Items — '+CONSOLIDATION_MONTH,report:'Consolidated Cash Flow Report',waterfall:'Cash Waterfall',brands:'Brand Breakdown'};
+    checks:'Checks & IC Loans',lineitems:'Other Line Items — '+CONSOLIDATION_MONTH,
+    corrections:'Corrections & Re-upload',
+    report:'Consolidated Cash Flow Report',waterfall:'Cash Waterfall',brands:'Brand Breakdown'};
   document.getElementById('page-title').textContent=titles[page]||page;
   if(page==='report'){populateFilters();renderReport();}
   if(page==='waterfall')renderWaterfall();
   if(page==='brands')renderBrands();
   if(page==='recon'){renderRecon();renderConfirmPanel();}
   if(page==='lineitems')initLineItems();
+  if(page==='corrections')renderCorrections();
 }
 
 function markStep(n,st){const el=document.getElementById(`step${n}`);if(!el)return;el.className=`step ${st}`;el.querySelector('.sdot').textContent=st==='done'?'✓':n;}

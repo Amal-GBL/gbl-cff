@@ -959,76 +959,85 @@ function renderCorrections(){
   if(!el) return;
 
   const allBrands = HIST.brands || [];
-  const consolidatedBrands = new Set(
-    S.consolidated.map(r => r.brand.replace(/__dup__\w+$/, ''))
-  );
-  // Also include brands from S.brands (stub or fresh)
-  Object.entries(S.brands).forEach(([k,d]) => {
-    consolidatedBrands.add((d.displayName || k).replace(/__dup__\w+$/, ''));
+
+  // Build consolidated brand set from session (either live or pending snap)
+  const snap = _pendingSnap || null;
+  const snapConsolidated = snap ? (snap.consolidated || []) : [];
+  const snapBrandMeta = snap ? (snap.brandMeta || {}) : {};
+
+  // Brands that have rows in consolidated (from session OR live S.consolidated)
+  const consolidatedBrands = new Set();
+  S.consolidated.forEach(r => consolidatedBrands.add(r.brand.replace(/__dup__\w+$/, '')));
+  snapConsolidated.forEach(r => consolidatedBrands.add(r.brand.replace(/__dup__\w+$/, '')));
+
+  // Row counts
+  const rowCounts = {};
+  (S.consolidated.length > 0 ? S.consolidated : snapConsolidated).forEach(r => {
+    const b = r.brand.replace(/__dup__\w+$/, '');
+    rowCounts[b] = (rowCounts[b] || 0) + 1;
   });
 
+  // Pending re-upload brands
   const pendingReupload = new Set(
     Object.entries(S.brands)
       .filter(([k,d]) => d._pendingCorrection)
-      .map(([k,d]) => d.displayName || k)
+      .map(([k,d]) => d.displayName || k.replace(/__dup__\w+$/, ''))
   );
 
   // Brand rows
   const rows = allBrands.map(brand => {
     const inSession = consolidatedBrands.has(brand);
     const pending = pendingReupload.has(brand);
-    // Find the brand key in S.brands
-    const brandKey = Object.keys(S.brands).find(k =>
-      (S.brands[k].displayName || k.replace(/__dup__\w+$/,'')) === brand
-    );
-    const rowCount = S.consolidated.filter(r =>
-      r.brand.replace(/__dup__\w+$/, '') === brand
-    ).length;
+    const rowCount = rowCounts[brand] || 0;
 
     let statusBadge, actionBtn;
     if(pending){
       statusBadge = `<span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600;background:#fff3e0;color:#e65100;">⟳ Pending Re-upload</span>`;
-      actionBtn = `<button onclick="cancelCorrection('${brand}')" style="padding:4px 12px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid #ccc;background:#fff;color:#555;">Cancel</button>`;
+      actionBtn = `<button onclick="cancelCorrection('${brand}')" style="padding:5px 14px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid #ccc;background:#fff;color:#555;">Cancel</button>`;
     } else if(inSession){
-      statusBadge = `<span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600;background:#e8f5e9;color:#2e7d32;">✓ Consolidated${rowCount ? ' ('+rowCount+' rows)' : ''}</span>`;
-      actionBtn = `<button onclick="markForCorrection('${brand}')" style="padding:4px 12px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;border:1.5px solid #d84315;background:#fff;color:#d84315;">Remove & Re-upload</button>`;
+      statusBadge = `<span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600;background:#e8f5e9;color:#2e7d32;">✓ Consolidated (${rowCount} rows)</span>`;
+      actionBtn = `<button onclick="markForCorrection('${brand}')" style="padding:5px 14px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;border:1.5px solid #d84315;background:#fff;color:#d84315;">Remove & Re-upload</button>`;
     } else {
-      statusBadge = `<span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600;background:#f5f5f5;color:#888;">— Not uploaded</span>`;
-      actionBtn = `<span style="font-size:11px;color:#aaa;">Upload via main flow</span>`;
+      statusBadge = `<span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600;background:#f5f5f5;color:#999;">— Not uploaded</span>`;
+      actionBtn = `<span style="font-size:11px;color:#bbb;">Upload via Upload tab</span>`;
     }
 
     return `<tr style="border-bottom:1px solid var(--rule);">
-      <td style="padding:9px 14px;font-size:12px;font-weight:500;">${brand}</td>
-      <td style="padding:9px 14px;">${statusBadge}</td>
-      <td style="padding:9px 14px;text-align:right;">${actionBtn}</td>
+      <td style="padding:10px 16px;font-size:12px;font-weight:500;color:var(--ink);">${brand}</td>
+      <td style="padding:10px 16px;">${statusBadge}</td>
+      <td style="padding:10px 16px;text-align:right;">${actionBtn}</td>
     </tr>`;
   }).join('');
 
-  // Pending re-upload drop zone
+  // Pending re-upload section
   const hasPending = pendingReupload.size > 0;
+  const pendingList = [...pendingReupload].join(', ');
   const uploadSection = hasPending ? `
     <div class="panel" style="margin-top:16px;">
       <div class="ph">
-        <div class="pt">Re-upload Files (${pendingReupload.size} brand${pendingReupload.size>1?'s':''} pending)</div>
-        <div style="font-size:11px;color:var(--muted);">Upload corrected files for: <strong>${[...pendingReupload].join(', ')}</strong></div>
+        <div class="pt">Re-upload Files — ${pendingReupload.size} Brand${pendingReupload.size>1?'s':''} Pending</div>
+        <div style="font-size:11px;color:var(--muted);">${pendingList}</div>
       </div>
       <div class="pb">
-        <div id="corr-drop" onclick="document.getElementById('corr-file-input').click()"
-          style="border:2px dashed var(--rule);border-radius:8px;padding:24px;text-align:center;cursor:pointer;margin-bottom:12px;transition:background .15s;"
-          ondragover="event.preventDefault();this.style.background='#f0f4ff';"
-          ondragleave="this.style.background='';"
-          ondrop="event.preventDefault();this.style.background='';handleCorrectionDrop(event.dataTransfer.files);">
-          <div style="font-size:28px;margin-bottom:6px;">📂</div>
-          <div style="font-size:13px;font-weight:600;">Drop files here or click to select</div>
+        <div onclick="document.getElementById('corr-file-input').click()"
+          style="border:2px dashed var(--rule);border-radius:8px;padding:28px;text-align:center;cursor:pointer;margin-bottom:14px;"
+          ondragover="event.preventDefault();this.style.borderColor='#2e6b9e';"
+          ondragleave="this.style.borderColor='';"
+          ondrop="event.preventDefault();this.style.borderColor='';handleCorrectionDrop(event.dataTransfer.files);">
+          <div style="font-size:30px;margin-bottom:6px;">📂</div>
+          <div style="font-size:13px;font-weight:600;color:var(--ink);">Drop corrected files here or click to select</div>
           <div style="font-size:11px;color:var(--muted);margin-top:4px;">One file per brand · xlsb / xlsx</div>
         </div>
         <input type="file" id="corr-file-input" multiple accept=".xlsb,.xlsx" style="display:none"
           onchange="handleCorrectionDrop(this.files)">
-        <div id="corr-file-list" style="margin-bottom:12px;"></div>
+        <div id="corr-file-list" style="margin-bottom:14px;"></div>
         <div style="display:flex;justify-content:flex-end;gap:8px;">
-          <button onclick="cancelAllCorrections()" style="padding:6px 16px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #ccc;background:#fff;color:#555;">Cancel All</button>
+          <button onclick="cancelAllCorrections()"
+            style="padding:6px 16px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #ccc;background:#fff;color:#555;">
+            Cancel All
+          </button>
           <button onclick="requireAuth(runCorrections)" id="corr-run-btn" disabled
-            style="padding:6px 18px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;border:none;background:#2e6b9e;color:#fff;opacity:0.5;">
+            style="padding:6px 20px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;border:none;background:#2e6b9e;color:#fff;opacity:0.5;">
             ↺ Re-consolidate
           </button>
         </div>
@@ -1039,15 +1048,15 @@ function renderCorrections(){
     <div class="panel">
       <div class="ph">
         <div class="pt">Jun-26 Brand Status</div>
-        <div style="font-size:11px;color:var(--muted);">Select brands to remove and re-upload with corrected files</div>
+        <div style="font-size:11px;color:var(--muted);">Click "Remove & Re-upload" to replace a brand's data. All other brands and IC fixes remain untouched.</div>
       </div>
       <div class="pb" style="padding:0;">
         <table style="width:100%;border-collapse:collapse;">
           <thead>
             <tr style="background:#f8f7f4;border-bottom:2px solid var(--rule);">
-              <th style="padding:8px 14px;text-align:left;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);">Brand</th>
-              <th style="padding:8px 14px;text-align:left;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);">Status</th>
-              <th style="padding:8px 14px;text-align:right;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);">Action</th>
+              <th style="padding:9px 16px;text-align:left;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);">Brand</th>
+              <th style="padding:9px 16px;text-align:left;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);">Status</th>
+              <th style="padding:9px 16px;text-align:right;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);">Action</th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
@@ -1419,23 +1428,11 @@ async function deleteSessionFromGitHub(){
 }
 
 async function checkForSavedSession(){
-  // GitHub is single storage — fetch on every page load
   try{
     setSyncBadge('⟳ Checking cloud…', '#a0b4c8');
     const snap = await fetchSessionFromGitHub();
     if(snap && snap.month === CONSOLIDATION_MONTH){
       _pendingSnap = snap;
-      // Pre-populate S.brands stubs so Upload grid shows cards immediately
-      if(snap.brandMeta){
-        Object.entries(snap.brandMeta).forEach(([k,m])=>{
-          S.brands[k]={displayName:m.displayName,filename:m.filename,
-            isDup:m.isDup,rows:[],rowCount:m.rowCount,
-            brandSummary:m.brandSummary||{}};
-          if(!S.mapping[k]) S.mapping[k]={};
-        });
-        S.consolidated = snap.consolidated || [];
-        renderGrid();
-      }
       _showSessionBanner(snap, 'cloud');
     } else if(snap && snap.month){
       setSyncBadge('☁ ' + snap.month + ' session on cloud', '#888');
@@ -1500,13 +1497,12 @@ function renderGrid(){
     const u=Object.values(m).filter(v=>v===null).length;
     const isDup=d.isDup;
     const displayName=d.displayName||key;
-    const isRestored=!d.rows||d.rows.length===0;
-    const consolidatedCount=isRestored?S.consolidated.filter(r=>r.brand.replace(/__dup__\w+$/,'')===(displayName)).length:0;
-    const cls=isDup?'uc':isRestored?'uc uploaded':u>0?'uc warn':'uc uploaded';
+    const cls=isDup?'uc':u>0?'uc warn':'uc uploaded';
     const border=isDup?'style="border:2px solid var(--red);background:var(--red-light);"':'';
-    const icon=isDup?'⚠️':isRestored?'✓':u>0?'⚠️':'✅';
-    const statusColor=isDup?'var(--red)':isRestored?'var(--green)':u>0?'var(--amber)':'var(--green)';
-    const statusText=isDup?'DUPLICATE — remove one':isRestored?`${consolidatedCount} rows consolidated`:u>0?u+' unmapped':d.rows.length.toLocaleString()+' rows';
+    const icon=isDup?'⚠️':u>0?'⚠️':'✅';
+    const statusColor=isDup?'var(--red)':u>0?'var(--amber)':'var(--green)';
+    const rowCount=d.rows?d.rows.length:d.rowCount||0;
+    const statusText=isDup?'DUPLICATE — remove one':u>0?u+' unmapped':rowCount.toLocaleString()+' rows';
     const latestM=d.latestMonth||'—';
     const safeKey=key.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
     h+=`<div class="${cls}" ${border}>

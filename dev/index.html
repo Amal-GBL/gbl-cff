@@ -1077,7 +1077,6 @@ function renderCorrections(){
     </div>`;
   if(hasPending) el.innerHTML += uploadSection;
 }
-}
 
 function markForCorrection(brand){
   if(!confirm(`Remove ${brand} from the consolidation?\n\nTheir data will be removed and you can re-upload a corrected file below.\n\nAll other brands and IC fixes remain untouched.`)) return;

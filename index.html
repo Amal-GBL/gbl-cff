@@ -1060,7 +1060,7 @@ function renderCorrections(){
     <div class="panel">
       <div class="ph">
         <div class="pt">Jun-26 Brand Status</div>
-        <div style="font-size:11px;color:var(--muted);">Click "Remove & Re-upload" to replace a brand's data. All other brands and IC fixes remain untouched.</div>
+        <div style="font-size:11px;color:var(--muted);">Click "Remove &amp; Re-upload" to replace a brand's data. All other brands and IC fixes remain untouched.</div>
       </div>
       <div class="pb" style="padding:0;">
         <table style="width:100%;border-collapse:collapse;">
@@ -1074,8 +1074,9 @@ function renderCorrections(){
           <tbody>${rows}</tbody>
         </table>
       </div>
-    </div>
-    ${uploadSection}`;
+    </div>`;
+  if(hasPending) el.innerHTML += uploadSection;
+}
 }
 
 function markForCorrection(brand){

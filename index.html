@@ -3267,12 +3267,26 @@ function renderLineItems(){
   const totNet=filtered.reduce((a,r)=>a+(r.net||0),0);
   const capped=filtered.length>=5000;
   if(sumEl){
-    sumEl.innerHTML=`<strong>${filtered.length.toLocaleString()}${capped?'+':''} rows</strong> matching filters`+
-      (capped?` <span style="color:var(--amber)">(showing first 5,000 — refine filters)</span>`:'')+
-      ` &nbsp;|&nbsp; Inflow: <span class="pos">${fmtN(totIn)}</span>`+
-      ` &nbsp;|&nbsp; Outflow: <span class="neg">${fmtN(totOut)}</span>`+
-      ` &nbsp;|&nbsp; Net: <span class="${totNet<0?'neg':'pos'}">${fmtN(totNet)}</span>`+
-      ` &nbsp;<button class="btn btn-sm btn-o" onclick="exportFilteredLI()" style="margin-left:8px">⬇ Export filtered</button>`;
+    const kpiColor = totNet<0?'var(--red)':'var(--green)';
+    const kpiLabel = cfFilter!=='ALL' ? cfFilter : grpFilter!=='ALL' ? grpFilter : 'Filtered Selection';
+    sumEl.innerHTML=
+      `<div style="display:flex;align-items:center;gap:24px;padding:10px 0;margin-bottom:6px;border-bottom:1px solid var(--rule);">
+        <div>
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);">${kpiLabel}</div>
+          <div style="font-size:22px;font-weight:700;color:${kpiColor};font-family:'Courier New',monospace;">${fmtN(totNet)}</div>
+          <div style="font-size:10px;color:var(--muted);">Net ₹ &nbsp;|&nbsp; ${filtered.length.toLocaleString()}${capped?'+':''} rows</div>
+        </div>
+        <div style="border-left:1px solid var(--rule);padding-left:24px;">
+          <div style="font-size:11px;color:var(--muted);">Inflow</div>
+          <div style="font-size:14px;font-weight:600;color:var(--green);font-family:'Courier New',monospace;">${fmtN(totIn)}</div>
+        </div>
+        <div style="border-left:1px solid var(--rule);padding-left:24px;">
+          <div style="font-size:11px;color:var(--muted);">Outflow</div>
+          <div style="font-size:14px;font-weight:600;color:var(--red);font-family:'Courier New',monospace;">${fmtN(totOut)}</div>
+        </div>
+        ${capped?`<div style="font-size:11px;color:var(--amber);margin-left:auto;">⚠ Showing first 5,000 rows — refine filters</div>`:''}
+        <div style="margin-left:auto;"><button class="btn btn-sm btn-o" onclick="exportFilteredLI()">⬇ Export</button></div>
+      </div>`;
   }
 
   if(!filtered.length){

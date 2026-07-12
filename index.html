@@ -2401,7 +2401,56 @@ function renderICRemap(){
 
   // ── Transaction rows for remapping ─────────────────────────────────────────
   let h2='';
-body.innerHTML=h2;
+
+  // ── Per-row dropdown options ─────────────────────────────────────────────────
+  const optBase=['<option disabled>─── Financing Activities ───</option>',
+    ...CF.structure[2].items.map(i=>`<option value="${i}">${i}</option>`),
+    '<option disabled>─── Operation Activities ───</option>',
+    ...CF.structure[0].items.map(i=>`<option value="${i}">${i}</option>`),
+    '<option disabled>─── Investing Activities ───</option>',
+    ...CF.structure[1].items.map(i=>`<option value="${i}">${i}</option>`),
+    '<option value="__ignore__">&#8856; Ignore</option>',
+    '<option value="__structural__">&#11041; Structural</option>'].join('');
+
+  h2+=`<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:8px;">Transaction Detail — ${CONSOLIDATION_MONTH} (each row has its own mapping)</div>
+  <div class="scroll-x"><table class="rt" style="min-width:1100px;font-size:11px;">
+  <thead><tr>
+    <th>Brand</th><th>Grouping</th><th>BANK</th><th>GL</th>
+    <th>Date</th><th>Particulars</th>
+    <th class="num">Debit<br><small style="font-weight:400">Inflow ₹</small></th>
+    <th class="num">Credit<br><small style="font-weight:400">Outflow ₹</small></th>
+    <th class="num">Net ₹</th>
+    <th style="min-width:220px">Map this row to</th>
+  </tr></thead><tbody>`;
+
+  let lastBrandGrp='';
+  txRows.sort((a,b)=>a.nm.localeCompare(b.nm)||a.grouping.localeCompare(b.grouping)).forEach(r=>{
+    const bgKey=r.brandKey+'||'+r.grouping;
+    const isNewGroup=bgKey!==lastBrandGrp;
+    lastBrandGrp=bgKey;
+    const opts=`<option value="${r.cfLine}" selected>${r.cfLine}</option><option disabled>───────────────</option>`+optBase;
+    const borderStyle=isNewGroup?'border-top:2px solid var(--rule);':'';
+    h2+=`<tr style="${borderStyle}">
+      <td style="font-weight:${isNewGroup?'700':'400'};color:${isNewGroup?'var(--ink)':'var(--muted)'};font-size:11px">
+        ${isNewGroup?r.nm:''}</td>
+      <td style="font-size:10px">${isNewGroup?`<code>${r.grouping}</code>`:''}</td>
+      <td style="font-size:10px;color:var(--muted)">${r.bank||'—'}</td>
+      <td style="font-size:10px;color:var(--muted)">${r.gl||'—'}</td>
+      <td style="font-size:10px;white-space:nowrap">${r.date||'—'}</td>
+      <td style="font-size:10px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+        title="${(r.particulars||'').replace(/"/g,'&quot;')}">${r.particulars||'—'}</td>
+      <td class="num pos">${r.inflow?fmtN(r.inflow):'—'}</td>
+      <td class="num neg">${r.outflow?fmtN(r.outflow):'—'}</td>
+      <td class="num ${r.net<0?'neg':r.net>0?'pos':''}">${fmtN(r.net)}</td>
+      <td><select style="width:100%;border:1.5px solid var(--rule);border-radius:4px;padding:3px 5px;font-size:10px;font-family:inherit;"
+        data-brand="${r.brandKey.replace(/"/g,'&quot;')}"
+        data-grp="${r.grouping.replace(/"/g,'&quot;')}"
+        data-ci="${r._ci}"
+        onchange="remapICRow(this)">${opts}</select></td>
+    </tr>`;
+  });
+  h2+=`</tbody></table></div>`;
+  body.innerHTML=h2;
 }
 
 function remapICRow(sel){

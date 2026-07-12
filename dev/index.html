@@ -605,6 +605,8 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
           <div class="fy-tab" id="current-month-tab" onclick="setFY(CONSOLIDATION_MONTH)">Jun-26 Only</div>
         </div>
         <select id="rf-brand" class="fsel" onchange="renderReport()" style="margin-left:auto;"></select>
+        <button class="btn btn-sm btn-p" onclick="confirmReport()" id="btn-confirm-report" title="Mark report as reviewed and ready to close">✓ Confirm Report</button>
+        <button class="btn btn-sm btn-s" onclick="exportExcel()">⬇ Export Excel</button>
       </div>
 
       <div class="panel">
@@ -1213,6 +1215,7 @@ function renderCloseMonth(){
     (!checksOk||!icOk?'<div class="alert" style="background:#fff8e1;border-color:#f9a825;margin-bottom:16px;"><span>⚠️</span><div style="font-size:12px;">Some checks need review. You can still proceed.</div></div>':'')+
     '<div style="display:flex;justify-content:flex-end;gap:10px;">'+
     '<button onclick="showPage(this.dataset.p)" data-p="report" style="padding:8px 20px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #ccc;background:#fff;color:#555;">&larr; Back to Report</button>'+
+    '<button onclick="exportExcel()" style="padding:8px 16px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #2e6b9e;background:#fff;color:#2e6b9e;">⬇ Export Excel</button>'+
     '<button onclick="requireAuth(bakeInMonth)" style="padding:8px 28px;border-radius:5px;font-size:13px;font-weight:700;cursor:pointer;border:none;background:#1a5c2a;color:#fff;">Close &amp; Bake In '+CONSOLIDATION_MONTH+'</button>'+
     '</div></div></div>';
   markStep(6,'active');

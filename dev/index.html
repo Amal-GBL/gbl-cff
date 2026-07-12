@@ -605,8 +605,6 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
           <div class="fy-tab" id="current-month-tab" onclick="setFY(CONSOLIDATION_MONTH)">Jun-26 Only</div>
         </div>
         <select id="rf-brand" class="fsel" onchange="renderReport()" style="margin-left:auto;"></select>
-        <button class="btn btn-sm btn-s" onclick="exportExcel()">⬇ Export Excel</button>
-        
       </div>
 
       <div class="panel">
@@ -943,6 +941,7 @@ function saveSession(){
       excludedBrands: S.excludedBrands,
       mapping: S.mapping,
       icRows,
+      reportConfirmed: S.reportConfirmed||false,
       brandMeta: Object.fromEntries(Object.entries(S.brands).map(([k,d])=>[k,{
         displayName:d.displayName,filename:d.filename,isDup:d.isDup,
         rowCount:d.rows?d.rows.length:0,
@@ -1155,6 +1154,20 @@ function renderCorrectionFileList(){
 }
 
 
+
+function confirmReport(){
+  S.reportConfirmed = true;
+  const btn = document.getElementById('btn-confirm-report');
+  if(btn){ btn.textContent='✓ Report Confirmed'; btn.style.background='#2e7d32'; btn.disabled=true; }
+  saveSession();
+  // Show toast
+  const t=document.createElement('div');
+  t.style.cssText='position:fixed;bottom:24px;right:24px;background:#2e7d32;color:#fff;padding:10px 20px;border-radius:6px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.2)';
+  t.textContent='Report confirmed ✓ — ready to close month';
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(),3000);
+}
+
 function renderCloseMonth(){
   const el=document.getElementById('page-closemonth');
   if(!el)return;
@@ -1192,6 +1205,7 @@ function renderCloseMonth(){
     row('3-Tier Balance',checksOk,checksOk?'All months pass':checkFails+' month(s) have differences')+
     row('IC Loans Net',icOk,icOk?'Net to zero':'Portfolio net = '+fmtCr(icTotal))+
     row('Net CF '+CONSOLIDATION_MONTH,true,'Net CF = '+fmtCr(netCF))+
+    row('Report Reviewed',S.reportConfirmed===true,'Click \'Confirm Report\' in the Consolidated Report tab to mark as reviewed')+
     '</tbody></table></div></div>'+
     '<div class="panel" style="margin-top:16px;"><div class="ph"><div class="pt">Close '+CONSOLIDATION_MONTH+'</div>'+
     '<div style="font-size:11px;color:var(--muted);">Permanent — cannot be undone</div></div><div class="pb">'+
@@ -1429,6 +1443,7 @@ function restoreSession(snap){
   try{
     if(!snap) return false; // snap must be passed from GitHub fetch
     S.consolidated = snap.consolidated || [];
+  S.reportConfirmed = snap.reportConfirmed || false;
     S.months = snap.months || [];
     S.brandList = snap.brandList || [];
     S.recon = snap.recon || {};
@@ -2381,97 +2396,9 @@ function renderICRemap(){
     return;
   }
 
-  // ── Summary by CF line ──────────────────────────────────────────────────────
-  const lineTotals={};
-  IC_LINES.forEach(l=>{lineTotals[l]={inflow:0,outflow:0,net:0};});
-  txRows.forEach(r=>{
-    if(lineTotals[r.cfLine]){
-      lineTotals[r.cfLine].inflow+=r.inflow;
-      lineTotals[r.cfLine].outflow+=r.outflow;
-      lineTotals[r.cfLine].net+=r.net;
-    }
-  });
-
-  let h2=`<div style="margin-bottom:14px;">
-    <table class="rt"><thead><tr>
-      <th>CF Line</th>
-      <th class="num">Debit (Inflow ₹)</th>
-      <th class="num">Credit (Outflow ₹)</th>
-      <th class="num">Net ₹</th>
-      <th>Status</th>
-    </tr></thead><tbody>`;
-  IC_LINES.forEach(l=>{
-    const t=lineTotals[l];
-    if(!t||t.inflow===0&&t.outflow===0)return;
-    h2+=`<tr>
-      <td style="font-size:12px">${l}</td>
-      <td class="num pos">${t.inflow?fmtN(t.inflow):'—'}</td>
-      <td class="num neg">${t.outflow?fmtN(t.outflow):'—'}</td>
-      <td class="num ${t.net<0?'neg':t.net>0?'pos':''}">${fmtN(t.net)}</td>
-      <td><span class="badge ${Math.abs(t.net)<1000?'bg':'ba'}">${Math.abs(t.net)<1000?'Balanced':'Unbalanced'}</span></td>
-    </tr>`;
-  });
-  const gIn=Object.values(lineTotals).reduce((a,t)=>a+t.inflow,0);
-  const gOut=Object.values(lineTotals).reduce((a,t)=>a+t.outflow,0);
-  const gNet=Object.values(lineTotals).reduce((a,t)=>a+t.net,0);
-  h2+=`<tr class="grand">
-    <td>PORTFOLIO NET</td>
-    <td class="num pos">${fmtN(gIn)}</td>
-    <td class="num neg">${fmtN(gOut)}</td>
-    <td class="num ${gNet<0?'neg':gNet>0?'pos':''}">${fmtN(gNet)}</td>
-    <td><span class="badge ${Math.abs(gNet)<1000?'bg':'br'}">${Math.abs(gNet)<1000?'BALANCED':'UNBALANCED'}</span></td>
-  </tr></tbody></table></div>`;
-
-  // ── Per-row dropdown options ─────────────────────────────────────────────────
-  const optBase=['<option disabled>─── Financing Activities ───</option>',
-    ...CF.structure[2].items.map(i=>`<option value="${i}">${i}</option>`),
-    '<option disabled>─── Operation Activities ───</option>',
-    ...CF.structure[0].items.map(i=>`<option value="${i}">${i}</option>`),
-    '<option disabled>─── Investing Activities ───</option>',
-    ...CF.structure[1].items.map(i=>`<option value="${i}">${i}</option>`),
-    '<option value="__ignore__">&#8856; Ignore</option>',
-    '<option value="__structural__">&#11041; Structural</option>'].join('');
-
-  h2+=`<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:8px;">Transaction Detail — ${CONSOLIDATION_MONTH} (each row has its own mapping)</div>
-  <div class="scroll-x"><table class="rt" style="min-width:1100px;font-size:11px;">
-  <thead><tr>
-    <th>Brand</th><th>Grouping</th><th>BANK</th><th>GL</th>
-    <th>Date</th><th>Particulars</th>
-    <th class="num">Debit<br><small style="font-weight:400">Inflow ₹</small></th>
-    <th class="num">Credit<br><small style="font-weight:400">Outflow ₹</small></th>
-    <th class="num">Net ₹</th>
-    <th style="min-width:220px">Map this row to</th>
-  </tr></thead><tbody>`;
-
-  let lastBrandGrp='';
-  txRows.sort((a,b)=>a.nm.localeCompare(b.nm)||a.grouping.localeCompare(b.grouping)).forEach(r=>{
-    const bgKey=r.brandKey+'||'+r.grouping;
-    const isNewGroup=bgKey!==lastBrandGrp;
-    lastBrandGrp=bgKey;
-    // Build per-row options with current CF line selected
-    const opts=`<option value="${r.cfLine}" selected>${r.cfLine}</option><option disabled>───────────────</option>`+optBase;
-    const borderStyle=isNewGroup?'border-top:2px solid var(--rule);':'';
-    h2+=`<tr style="${borderStyle}">
-      <td style="font-weight:${isNewGroup?'700':'400'};color:${isNewGroup?'var(--ink)':'var(--muted)'};font-size:11px">
-        ${isNewGroup?r.nm:''}</td>
-      <td style="font-size:10px">${isNewGroup?`<code>${r.grouping}</code>`:''}</td>
-      <td style="font-size:10px;color:var(--muted)">${r.bank||'—'}</td>
-      <td style="font-size:10px;color:var(--muted)">${r.gl||'—'}</td>
-      <td style="font-size:10px;white-space:nowrap">${r.date||'—'}</td>
-      <td style="font-size:10px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
-        title="${(r.particulars||'').replace(/"/g,'&quot;')}">${r.particulars||'—'}</td>
-      <td class="num pos">${r.inflow?fmtN(r.inflow):'—'}</td>
-      <td class="num neg">${r.outflow?fmtN(r.outflow):'—'}</td>
-      <td class="num ${r.net<0?'neg':r.net>0?'pos':''}">${fmtN(r.net)}</td>
-      <td><select style="width:100%;border:1.5px solid var(--rule);border-radius:4px;padding:3px 5px;font-size:10px;font-family:inherit;"
-        data-brand="${r.brandKey.replace(/"/g,'&quot;')}"
-        data-grp="${r.grouping.replace(/"/g,'&quot;')}"
-        data-ci="${r._ci}"
-        onchange="remapICRow(this)">${opts}</select></td>
-    </tr>`;
-  });
-  h2+=`</tbody></table></div>`;
-  body.innerHTML=h2;
+  // ── Transaction rows for remapping ─────────────────────────────────────────
+  let h2='';
+body.innerHTML=h2;
 }
 
 function remapICRow(sel){
@@ -3389,7 +3316,7 @@ function showPage(page){
     corrections:'Corrections & Re-upload',closemonth:'Close Month — '+CONSOLIDATION_MONTH,
     report:'Consolidated Cash Flow Report',waterfall:'Cash Waterfall',brands:'Brand Breakdown'};
   document.getElementById('page-title').textContent=titles[page]||page;
-  if(page==='report'){populateFilters();renderReport();}
+  if(page==='report'){populateFilters();renderReport();const b=document.getElementById('btn-confirm-report');if(b&&S.reportConfirmed){b.textContent='✓ Report Confirmed';b.style.background='#2e7d32';b.disabled=true;}}
   if(page==='waterfall')renderWaterfall();
   if(page==='brands')renderBrands();
   if(page==='recon'){renderRecon();renderConfirmPanel();}

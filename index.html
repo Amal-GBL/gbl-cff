@@ -1190,10 +1190,60 @@ function renderCloseMonth(){
   const checksOk=checkFails===0;
   const netCF=S.consolidated.reduce((a,r)=>a+r.net,0);
   const fmtCr=v=>(Math.abs(v)/1e7).toFixed(2)+'Cr'+(v<0?' (out)':'');
-  const row=(lbl,ok,det)=>'<tr style="border-bottom:1px solid var(--rule);">'+
+  const fmtL=v=>{const l=Math.abs(v)/1e5;return (v<0?'('+l.toFixed(2)+')':l.toFixed(2))+'L';};
+  const pfRow=(lbl,ok,det)=>'<tr style="border-bottom:1px solid var(--rule);">'+
     '<td style="padding:10px 16px;font-size:12px;font-weight:500;">'+lbl+'</td>'+
     '<td style="padding:10px 16px;"><span style="padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600;background:'+(ok?'#e8f5e9':'#fff3e0')+';color:'+(ok?'#2e7d32':'#e65100')+';">'+(ok?'OK':'Review')+'</span></td>'+
     '<td style="padding:10px 16px;font-size:12px;color:var(--muted);">'+det+'</td></tr>';
+
+  // ── Compute prev month label ───────────────────────────────────────────────
+  const [cm,cy]=CONSOLIDATION_MONTH.split('-').map(Number);
+  const pm=cm===1?12:cm-1, py=cm===1?cy-1:cy;
+  const prevMonthKey=pm+'-'+py;
+
+  // ── Brand-wise 3-tier gap ──────────────────────────────────────────────────
+  const gapRows=[];
+  let totalGap=0;
+  HIST.brands.forEach(brand=>{
+    const mayClose=(HIST.closing[brand]||{})[prevMonthKey]||0;
+    const junNet=S.consolidated.filter(r=>r.brand.replace(/__dup__\w+$/,'')===brand||r.brand===brand).reduce((a,r)=>a+r.net,0);
+    const derived=mayClose+junNet;
+    const bmKey=Object.keys(S.brands).find(k=>(S.brands[k].displayName||k.replace(/__dup__\w+$/,''))===brand);
+    const actual=bmKey?(((S.brands[bmKey].brandSummary||{})[CONSOLIDATION_MONTH])||{})['Closing Cash & Cash Equivalents']||0:0;
+    const gap=derived-actual;
+    totalGap+=gap;
+    if(Math.abs(gap)>10000||(!actual&&junNet!==0)){
+      gapRows.push({brand,mayClose,net:junNet,derived,actual,gap});
+    }
+  });
+
+  const brandTable=gapRows.length===0
+    ?'<div style="padding:16px;font-size:12px;color:#2e7d32;">All uploaded brands balance within threshold.</div>'
+    :'<div class="pb" style="padding:0;"><table style="width:100%;border-collapse:collapse;">'+
+      '<thead><tr style="background:#f8f7f4;border-bottom:2px solid var(--rule);">'+
+      '<th style="padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);">Brand</th>'+
+      '<th style="padding:8px 14px;text-align:right;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);">'+prevMonthKey+' Close</th>'+
+      '<th style="padding:8px 14px;text-align:right;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);">'+CONSOLIDATION_MONTH+' Net CF</th>'+
+      '<th style="padding:8px 14px;text-align:right;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);">Derived Close</th>'+
+      '<th style="padding:8px 14px;text-align:right;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);">Actual Close</th>'+
+      '<th style="padding:8px 14px;text-align:right;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);">Gap</th>'+
+      '<th style="padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);">Status</th>'+
+      '</tr></thead><tbody>'+
+      gapRows.map(b=>'<tr style="border-bottom:1px solid var(--rule);">'+
+        '<td style="padding:8px 14px;font-size:12px;font-weight:500;">'+b.brand+'</td>'+
+        '<td style="padding:8px 14px;text-align:right;font-size:11px;font-family:monospace;">'+fmtL(b.mayClose)+'</td>'+
+        '<td style="padding:8px 14px;text-align:right;font-size:11px;font-family:monospace;color:'+(b.net<0?'var(--red)':'var(--green)')+';">'+fmtL(b.net)+'</td>'+
+        '<td style="padding:8px 14px;text-align:right;font-size:11px;font-family:monospace;">'+fmtL(b.derived)+'</td>'+
+        '<td style="padding:8px 14px;text-align:right;font-size:11px;font-family:monospace;">'+(b.actual?fmtL(b.actual):'—')+'</td>'+
+        '<td style="padding:8px 14px;text-align:right;font-size:11px;font-family:monospace;font-weight:700;color:'+(Math.abs(b.gap)>10000?'var(--red)':'var(--green)')+';">'+fmtL(b.gap)+'</td>'+
+        '<td style="padding:8px 14px;"><span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;background:'+(b.actual?Math.abs(b.gap)<10000?'#e8f5e9':'#fce4e4':'#f5f5f5')+';color:'+(b.actual?Math.abs(b.gap)<10000?'#2e7d32':'#c62828':'#999')+';">'+(b.actual?Math.abs(b.gap)<10000?'OK':'Gap':'Not uploaded')+'</span></td>'+
+        '</tr>').join('')+
+      '<tr style="background:#f8f7f4;border-top:2px solid var(--rule);">'+
+      '<td colspan="5" style="padding:8px 14px;font-size:11px;font-weight:700;">Portfolio Total Gap</td>'+
+      '<td style="padding:8px 14px;text-align:right;font-size:11px;font-family:monospace;font-weight:700;color:'+(Math.abs(totalGap)>10000?'var(--red)':'var(--green)')+';">'+fmtL(totalGap)+'</td>'+
+      '<td></td></tr>'+
+      '</tbody></table></div>';
+
   el.innerHTML=
     '<div class="panel"><div class="ph"><div class="pt">Pre-flight Checks</div>'+
     '<div style="font-size:11px;color:var(--muted);">Review before closing the month permanently</div></div>'+
@@ -1203,19 +1253,25 @@ function renderCloseMonth(){
     '<th style="padding:9px 16px;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);">Status</th>'+
     '<th style="padding:9px 16px;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);">Detail</th>'+
     '</tr></thead><tbody>'+
-    row('Brands Uploaded',uploaded===total,uploaded+' / '+total+(missing.length?' · Missing: '+missing.join(', '):''))+
-    row('3-Tier Balance',checksOk,checksOk?'All months pass':checkFails+' month(s) have differences')+
-    row('IC Loans Net',icOk,icOk?'Net to zero':'Portfolio net = '+fmtCr(icTotal))+
-    row('Net CF '+CONSOLIDATION_MONTH,true,'Net CF = '+fmtCr(netCF))+
-    row('Report Reviewed',S.reportConfirmed===true,'Click \'Confirm Report\' in the Consolidated Report tab to mark as reviewed')+
+    pfRow('Brands Uploaded',uploaded===total||missing.every(b=>['GBL Singapore','GBL Mimosa','GBL Sirius','GBL Antares','GBL Pollux','Neemli','Pet Edge'].includes(b)),uploaded+' / '+total+(missing.length?' \u00b7 Missing: '+missing.join(', '):''))+
+    pfRow('3-Tier Balance',checksOk,checksOk?'All months pass':checkFails+' month(s) have differences')+
+    pfRow('IC Loans Net',icOk,icOk?'Net to zero':'Portfolio net = '+fmtCr(icTotal))+
+    pfRow('Net CF '+CONSOLIDATION_MONTH,true,'Net CF = '+fmtCr(netCF))+
+    pfRow('Report Reviewed',S.reportConfirmed===true,'Click Confirm Report in the Consolidated Report tab to mark as reviewed')+
     '</tbody></table></div></div>'+
+
+    '<div class="panel" style="margin-top:16px;"><div class="ph">'+
+    '<div class="pt">Brand-wise 3-Tier Check \u2014 '+CONSOLIDATION_MONTH+'</div>'+
+    '<div style="font-size:11px;color:var(--muted);">Opening ('+prevMonthKey+' close) + Net CF vs Actual Closing. Gaps indicate source data issues in the brand file.</div>'+
+    '</div>'+brandTable+'</div>'+
+
     '<div class="panel" style="margin-top:16px;"><div class="ph"><div class="pt">Close '+CONSOLIDATION_MONTH+'</div>'+
-    '<div style="font-size:11px;color:var(--muted);">Permanent — cannot be undone</div></div><div class="pb">'+
+    '<div style="font-size:11px;color:var(--muted);">Permanent \u2014 cannot be undone</div></div><div class="pb">'+
     '<div style="font-size:12px;color:var(--ink);margin-bottom:16px;line-height:1.8;">Closing <strong>'+CONSOLIDATION_MONTH+'</strong> will bake '+uploaded+' brands permanently into historical data, advance to next month, clear the session, and push to GitHub.</div>'+
-    (!checksOk||!icOk?'<div class="alert" style="background:#fff8e1;border-color:#f9a825;margin-bottom:16px;"><span>⚠️</span><div style="font-size:12px;">Some checks need review. You can still proceed.</div></div>':'')+
+    (!checksOk||!icOk?'<div class="alert" style="background:#fff8e1;border-color:#f9a825;margin-bottom:16px;"><span>\u26a0\ufe0f</span><div style="font-size:12px;">Some checks need review. You can still proceed.</div></div>':'')+
     '<div style="display:flex;justify-content:flex-end;gap:10px;">'+
     '<button onclick="showPage(this.dataset.p)" data-p="report" style="padding:8px 20px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #ccc;background:#fff;color:#555;">&larr; Back to Report</button>'+
-    '<button onclick="exportExcel()" style="padding:8px 16px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #2e6b9e;background:#fff;color:#2e6b9e;">⬇ Export Excel</button>'+
+    '<button onclick="exportExcel()" style="padding:8px 16px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #2e6b9e;background:#fff;color:#2e6b9e;">&#8595; Export Excel</button>'+
     '<button onclick="requireAuth(bakeInMonth)" style="padding:8px 28px;border-radius:5px;font-size:13px;font-weight:700;cursor:pointer;border:none;background:#1a5c2a;color:#fff;">Close &amp; Bake In '+CONSOLIDATION_MONTH+'</button>'+
     '</div></div></div>';
   markStep(6,'active');

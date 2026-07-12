@@ -1375,7 +1375,7 @@ async function runCorrections(){
       if(r.month !== CONSOLIDATION_MONTH) return;
       const cf = S.mapping[r.brand]?.[r.grouping] || S.mapping[brandKey]?.[r.grouping];
       if(!cf||cf==='__structural__'||cf==='__ignore__') return;
-      S.consolidated.push({...r, cfLine:cf, activity:ACT_OF[cf]||''});
+      S.consolidated.push({...r, brand:r.brand.replace(/__dup__\w+$/,''), cfLine:cf, activity:ACT_OF[cf]||''});
     });
   });
 
@@ -1384,7 +1384,7 @@ async function runCorrections(){
 
   // Update months/brandList
   S.months=[...new Set(S.consolidated.map(r=>r.month))].sort(sortM);
-  S.brandList=[...new Set(S.consolidated.map(r=>r.brand))].sort();
+  S.brandList=[...new Set(S.consolidated.map(r=>r.brand.replace(/__dup__\w+$/,'')))].sort();
 
   // Clear pending state
   Object.values(S.brands).forEach(d=>delete d._pendingCorrection);
@@ -1578,7 +1578,7 @@ function restoreSession(snap){
   // snap can be passed directly (from GitHub) or read from localStorage
   try{
     if(!snap) return false; // snap must be passed from GitHub fetch
-    S.consolidated = snap.consolidated || [];
+    S.consolidated = (snap.consolidated || []).map(r=>({...r,brand:r.brand.replace(/__dup__\w+$/,'')}));
   S.reportConfirmed = snap.reportConfirmed || false;
     S.months = snap.months || [];
     S.brandList = snap.brandList || [];
@@ -2284,12 +2284,12 @@ function consolidate(){
       if(!cf||cf==='__structural__'||cf==='__ignore__') return;
       if(r.month!==CONSOLIDATION_MONTH) return;
       if(failedBrands.has(r.brand)) return;
-      S.consolidated.push({...r,cfLine:cf,activity:ACT_OF[cf]||''});
+      S.consolidated.push({...r,brand:r.brand.replace(/__dup__\w+$/,''),cfLine:cf,activity:ACT_OF[cf]||''});
     });
   });
 
   S.months=[...new Set(S.consolidated.map(r=>r.month))].sort(sortM);
-  S.brandList=[...new Set(S.consolidated.map(r=>r.brand))].sort();
+  S.brandList=[...new Set(S.consolidated.map(r=>r.brand.replace(/__dup__\w+$/,'')))].sort();
 
   // Re-apply IC fixes
   if(Object.keys(icFixes).length){
@@ -2400,7 +2400,7 @@ function finaliseConsolidation(){
       const cf=S.mapping[r.brand]?.[r.grouping];
       if(!cf||cf==='__structural__'||cf==='__ignore__')return;
       if(r.month!==CONSOLIDATION_MONTH)return;
-      S.consolidated.push({...r,cfLine:cf,activity:ACT_OF[cf]||''});
+      S.consolidated.push({...r,brand:r.brand.replace(/__dup__\w+$/,''),cfLine:cf,activity:ACT_OF[cf]||''});
     });
   });
 
@@ -2410,7 +2410,7 @@ function finaliseConsolidation(){
   }
 
   S.months=[...new Set(S.consolidated.map(r=>r.month))].sort(sortM);
-  S.brandList=[...new Set(S.consolidated.map(r=>r.brand))].sort();
+  S.brandList=[...new Set(S.consolidated.map(r=>r.brand.replace(/__dup__\w+$/,'')))].sort();
   S.excludedBrands=Object.keys(S.brands).filter(b=>!selectedBrands.has(b)&&!S.brands[b].isDup);
   populateFilters();runChecks();
   saveSession();
@@ -2621,7 +2621,7 @@ function remapICLine(sel){
       if(r.grouping!==grp||r.month!==CONSOLIDATION_MONTH)return;
       const cf=newLine;
       if(!cf||cf==='__structural__'||cf==='__ignore__')return;
-      S.consolidated.push({...r,cfLine:cf,activity:ACT_OF[cf]||''});
+      S.consolidated.push({...r,brand:r.brand.replace(/__dup__\w+$/,''),cfLine:cf,activity:ACT_OF[cf]||''});
     });
   }
   // Re-run checks and re-render

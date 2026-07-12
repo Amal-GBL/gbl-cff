@@ -538,7 +538,6 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
           <div class="pt">Brand Reconciliation — Jun-26</div>
           <div style="display:flex;gap:8px;">
             <select id="recon-brand" class="fsel" onchange="renderRecon()"></select>
-            <button class="btn btn-sm btn-s" onclick="exportRecon()">⬇ Export</button>
           </div>
         </div>
         <div class="pb" id="recon-body"></div>
@@ -664,14 +663,7 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
             </table>
           </div>
         </div>
-      </div>
-  </div>
-
-    <!-- CORRECTIONS PAGE -->
-    <div id="page-corrections" class="hidden"></div>
-
-    <!-- CLOSE MONTH PAGE -->
-    <div id="page-closemonth" class="hidden"></div>
+      
 
       <!-- Month export -->
       <div class="panel">
@@ -684,6 +676,14 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
           Brand, Grouping, BANK, GL, Date, Particulars, Inflow, Outflow, Net, CF Line, Activity.
         </div>
       </div>
+    </div>
+  </div>
+
+    <!-- CORRECTIONS PAGE -->
+    <div id="page-corrections" class="hidden"></div>
+
+    <!-- CLOSE MONTH PAGE -->
+    <div id="page-closemonth" class="hidden"></div>
     </div>
 
     <!-- ── WATERFALL ── -->

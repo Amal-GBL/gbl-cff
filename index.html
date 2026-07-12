@@ -1281,57 +1281,123 @@ async function runCorrections(){
   if(_correctionPendingFiles.length === 0){
     alert('Please drop the corrected files first.');return;
   }
-  const pendingBrands = Object.entries(S.brands)
-    .filter(([k,d]) => d._pendingCorrection)
-    .map(([k,d]) => d.displayName || k);
 
   const btn = document.getElementById('corr-run-btn');
   if(btn){btn.disabled=true;btn.textContent='Processing...';}
 
+  // Track which brands are being corrected
+  const correctionBrands = new Set(
+    Object.entries(S.brands)
+      .filter(([k,d]) => d._pendingCorrection)
+      .map(([k,d]) => (d.displayName || k.replace(/__dup__\w+$/,'')))
+  );
+
+  // Parse each uploaded file
   let processed = 0;
   for(const file of _correctionPendingFiles){
     try{
-      await parseFile(file); // reuse existing upload parser
+      await parseFile(file);
       processed++;
     }catch(e){ console.error('Error processing', file.name, e); }
   }
 
   if(processed === 0){
-    alert('No files could be processed. Please check the file format.');
+    alert('No files could be processed. Check the file format.');
     if(btn){btn.disabled=false;btn.textContent='↺ Re-consolidate';}
     return;
   }
 
-  // Clear pending flags and files
-  Object.values(S.brands).forEach(d => delete d._pendingCorrection);
-  _correctionPendingFiles = [];
-
-  // Run mapping auto-apply for newly uploaded brands (using saved S.mapping)
-  Object.entries(S.brands).forEach(([key,d]) => {
-    if(!d.rows || d.rows.length === 0) return;
-    if(!S.mapping[key]) S.mapping[key] = {};
-    d.rows.forEach(r => {
-      if(S.mapping[key][r.grouping] === undefined){
-        // Try to find mapping from saved mapping.json (already loaded into S.mapping)
-        S.mapping[key][r.grouping] = null; // unmapped - user will need to handle
+  // Auto-apply saved mappings to newly uploaded brands
+  // Only flag as null if genuinely new grouping not seen before
+  let hasNewUnmapped = false;
+  Object.entries(S.brands).forEach(([key,d])=>{
+    if(!d.rows||d.rows.length===0) return;
+    if(!S.mapping[key]) S.mapping[key]={};
+    d.rows.forEach(r=>{
+      if(S.mapping[key][r.grouping]===undefined){
+        // Check if any other brand has this grouping mapped
+        const existingMap = Object.values(S.mapping).reduce((found,m)=>{
+          return found || (m[r.grouping] !== undefined ? m[r.grouping] : null);
+        }, null);
+        S.mapping[key][r.grouping] = existingMap || null;
+        if(!existingMap) hasNewUnmapped = true;
       }
     });
   });
 
-  // Check if any unmapped groupings remain
-  const hasUnmapped = Object.entries(S.mapping).some(([b,m]) =>
-    S.brands[b]?.rows?.length > 0 && Object.values(m).some(v => v === null)
-  );
-
-  if(hasUnmapped){
-    alert('Some groupings in the new files need mapping. Redirecting to Map by Brand.');
-    showPage('mapping');
-    return;
+  if(hasNewUnmapped){
+    if(!confirm('Some new groupings need mapping. Go to Map by Brand to assign them?\n\nClick OK to go to mapping, or Cancel to proceed anyway (new groupings will be ignored).')){
+      // Proceed anyway - mark nulls as ignore
+      Object.entries(S.brands).forEach(([key,d])=>{
+        if(!d.rows||d.rows.length===0) return;
+        Object.keys(S.mapping[key]||{}).forEach(grp=>{
+          if(S.mapping[key][grp]===null) S.mapping[key][grp]='__ignore__';
+        });
+      });
+    } else {
+      showPage('mapping');
+      if(btn){btn.disabled=false;btn.textContent='↺ Re-consolidate';}
+      return;
+    }
   }
 
-  // Run consolidation (additive — preserves other brands)
-  consolidate();
+  // Additive consolidation — only process the corrected brands
+  // Preserve IC fixes on existing rows
+  const icFixes={};
+  S.consolidated.forEach(r=>{ if(r._uid) icFixes[r._uid]=r.cfLine; });
+
+  // Remove old rows for corrected brands from S.consolidated
+  S.consolidated = S.consolidated.filter(r=>{
+    const base = r.brand.replace(/__dup__\w+$/,'');
+    return !correctionBrands.has(base) && !correctionBrands.has(r.brand);
+  });
+
+  // Add new rows for corrected brands only
+  const failedBrands = new Set();
+  // Quick recon check for corrected brands
+  Object.entries(S.brands).forEach(([brandKey,d])=>{
+    if(!d.rows||d.rows.length===0) return;
+    const displayName = d.displayName || brandKey.replace(/__dup__\w+$/,'');
+    if(!correctionBrands.has(displayName)) return;
+
+    d.rows.forEach(r=>{
+      if(r.month !== CONSOLIDATION_MONTH) return;
+      const cf = S.mapping[r.brand]?.[r.grouping] || S.mapping[brandKey]?.[r.grouping];
+      if(!cf||cf==='__structural__'||cf==='__ignore__') return;
+      S.consolidated.push({...r, cfLine:cf, activity:ACT_OF[cf]||''});
+    });
+  });
+
+  // Re-apply IC fixes
+  S.consolidated.forEach(r=>{ if(r._uid&&icFixes[r._uid]) r.cfLine=icFixes[r._uid]; });
+
+  // Update months/brandList
+  S.months=[...new Set(S.consolidated.map(r=>r.month))].sort(sortM);
+  S.brandList=[...new Set(S.consolidated.map(r=>r.brand))].sort();
+
+  // Clear pending state
+  Object.values(S.brands).forEach(d=>delete d._pendingCorrection);
+  _correctionPendingFiles=[];
+
+  // Re-run checks and update report
+  runChecks();
+  renderKPIs();
+  renderReport();
+
+  // Save session
+  saveSession();
+
   if(btn){btn.disabled=false;btn.textContent='↺ Re-consolidate';}
+
+  // Stay on corrections page and refresh it
+  renderCorrections();
+
+  // Show success toast
+  const t=document.createElement('div');
+  t.style.cssText='position:fixed;bottom:24px;right:24px;background:#2e7d32;color:#fff;padding:10px 20px;border-radius:6px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.2)';
+  t.textContent=`✓ ${[...correctionBrands].join(', ')} re-consolidated successfully`;
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(),4000);
 }
 
 async function loadMappingFromGitHub(){

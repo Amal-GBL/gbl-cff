@@ -429,6 +429,7 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
     <div class="nav-item" onclick="showPage('checks')" id="nav-checks"><span class="nav-icon">✅</span> Checks & IC Loans</div>
     <div class="nav-item" onclick="showPage('lineitems')" id="nav-lineitems"><span class="nav-icon">🔍</span> Other Line Items</div>
     <div class="nav-item" onclick="showPage('corrections')" id="nav-corrections"><span class="nav-icon">✏️</span> Corrections</div>
+    <div class="nav-item" onclick="showPage('closemonth')" id="nav-closemonth"><span class="nav-icon">&#128274;</span> Close Month</div>
     <div class="nav-sec">Admin</div>
     <div class="nav-item" onclick="openSettings()" id="nav-settings"><span class="nav-icon">⚙</span> CFO Settings</div>
     <div class="nav-sec">Reports</div>
@@ -493,6 +494,7 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
         <div class="step" id="step3"><div class="sdot">3</div><div class="slabel">Recon vs<br>Summary</div></div>
         <div class="step" id="step4"><div class="sdot">4</div><div class="slabel">Checks &<br>IC Loans</div></div>
         <div class="step" id="step5"><div class="sdot">5</div><div class="slabel">Full<br>Report</div></div>
+        <div class="step" id="step6"><div class="sdot">6</div><div class="slabel">Close<br>Month</div></div>
       </div>
 
       <div class="panel">
@@ -667,6 +669,9 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
 
     <!-- CORRECTIONS PAGE -->
     <div id="page-corrections" class="hidden"></div>
+
+    <!-- CLOSE MONTH PAGE -->
+    <div id="page-closemonth" class="hidden"></div>
 
       <!-- Month export -->
       <div class="panel">
@@ -1147,6 +1152,56 @@ function renderCorrectionFileList(){
     </div>`
   ).join('');
   if(btn) {btn.disabled=false; btn.style.opacity='1';}
+}
+
+
+function renderCloseMonth(){
+  const el=document.getElementById('page-closemonth');
+  if(!el)return;
+  const hasData=S.consolidated.length>0;
+  if(!hasData){
+    el.innerHTML='<div class="panel"><div class="pb" style="padding:32px;text-align:center;color:var(--muted);">No consolidated data. Complete Steps 1-4 first.</div></div>';
+    return;
+  }
+  const brands=[...new Set(S.consolidated.map(r=>r.brand.replace(/__dup__\w+$/,'')))];
+  const total=HIST.brands.length,uploaded=brands.length;
+  const missing=HIST.brands.filter(b=>!brands.includes(b));
+  let icTotal=0;
+  S.consolidated.forEach(r=>{
+    if(['Debt Investment - Internal','Loan - Internal','Debt Repayments - Internal','Debt Repayment Receipts - Internal'].includes(r.cfLine))icTotal+=r.net;
+  });
+  const icOk=Math.abs(icTotal)<1000;
+  const checkFails=Object.entries(S.checks||{}).filter(([m,v])=>Math.abs(v)>1000).length;
+  const checksOk=checkFails===0;
+  const netCF=S.consolidated.reduce((a,r)=>a+r.net,0);
+  const fmtCr=v=>(Math.abs(v)/1e7).toFixed(2)+'Cr'+(v<0?' (out)':'');
+  const row=(lbl,ok,det)=>'<tr style="border-bottom:1px solid var(--rule);">'+
+    '<td style="padding:10px 16px;font-size:12px;font-weight:500;">'+lbl+'</td>'+
+    '<td style="padding:10px 16px;"><span style="padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600;background:'+(ok?'#e8f5e9':'#fff3e0')+';color:'+(ok?'#2e7d32':'#e65100')+';">'+(ok?'OK':'Review')+'</span></td>'+
+    '<td style="padding:10px 16px;font-size:12px;color:var(--muted);">'+det+'</td></tr>';
+  el.innerHTML=
+    '<div class="panel"><div class="ph"><div class="pt">Pre-flight Checks</div>'+
+    '<div style="font-size:11px;color:var(--muted);">Review before closing the month permanently</div></div>'+
+    '<div class="pb" style="padding:0;"><table style="width:100%;border-collapse:collapse;">'+
+    '<thead><tr style="background:#f8f7f4;border-bottom:2px solid var(--rule);">'+
+    '<th style="padding:9px 16px;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);">Check</th>'+
+    '<th style="padding:9px 16px;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);">Status</th>'+
+    '<th style="padding:9px 16px;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);">Detail</th>'+
+    '</tr></thead><tbody>'+
+    row('Brands Uploaded',uploaded===total,uploaded+' / '+total+(missing.length?' · Missing: '+missing.join(', '):''))+
+    row('3-Tier Balance',checksOk,checksOk?'All months pass':checkFails+' month(s) have differences')+
+    row('IC Loans Net',icOk,icOk?'Net to zero':'Portfolio net = '+fmtCr(icTotal))+
+    row('Net CF '+CONSOLIDATION_MONTH,true,'Net CF = '+fmtCr(netCF))+
+    '</tbody></table></div></div>'+
+    '<div class="panel" style="margin-top:16px;"><div class="ph"><div class="pt">Close '+CONSOLIDATION_MONTH+'</div>'+
+    '<div style="font-size:11px;color:var(--muted);">Permanent — cannot be undone</div></div><div class="pb">'+
+    '<div style="font-size:12px;color:var(--ink);margin-bottom:16px;line-height:1.8;">Closing <strong>'+CONSOLIDATION_MONTH+'</strong> will bake '+uploaded+' brands permanently into historical data, advance to next month, clear the session, and push to GitHub.</div>'+
+    (!checksOk||!icOk?'<div class="alert" style="background:#fff8e1;border-color:#f9a825;margin-bottom:16px;"><span>⚠️</span><div style="font-size:12px;">Some checks need review. You can still proceed.</div></div>':'')+
+    '<div style="display:flex;justify-content:flex-end;gap:10px;">'+
+    '<button onclick="showPage(this.dataset.p)" data-p="report" style="padding:8px 20px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #ccc;background:#fff;color:#555;">&larr; Back to Report</button>'+
+    '<button onclick="requireAuth(bakeInMonth)" style="padding:8px 28px;border-radius:5px;font-size:13px;font-weight:700;cursor:pointer;border:none;background:#1a5c2a;color:#fff;">Close &amp; Bake In '+CONSOLIDATION_MONTH+'</button>'+
+    '</div></div></div>';
+  markStep(6,'active');
 }
 
 async function runCorrections(){
@@ -3324,7 +3379,7 @@ function populateFilters(){
 }
 
 function showPage(page){
-  ['upload','mapping','recon','checks','lineitems','corrections','report','waterfall','brands'].forEach(p=>{
+  ['upload','mapping','recon','checks','lineitems','corrections','closemonth','report','waterfall','brands'].forEach(p=>{
     const pg=document.getElementById(`page-${p}`);
     if(pg) pg.classList.toggle('hidden',p!==page);
     const nav=document.getElementById(`nav-${p}`);
@@ -3332,7 +3387,7 @@ function showPage(page){
   });
   const titles={upload:'Upload Brand Files',mapping:'Line Item Mapping',recon:'Reconciliation vs Brand Summary',
     checks:'Checks & IC Loans',lineitems:'Other Line Items — '+CONSOLIDATION_MONTH,
-    corrections:'Corrections & Re-upload',
+    corrections:'Corrections & Re-upload',closemonth:'Close Month — '+CONSOLIDATION_MONTH,
     report:'Consolidated Cash Flow Report',waterfall:'Cash Waterfall',brands:'Brand Breakdown'};
   document.getElementById('page-title').textContent=titles[page]||page;
   if(page==='report'){populateFilters();renderReport();}
@@ -3341,6 +3396,7 @@ function showPage(page){
   if(page==='recon'){renderRecon();renderConfirmPanel();}
   if(page==='lineitems')initLineItems();
   if(page==='corrections')renderCorrections();
+  if(page==='closemonth')renderCloseMonth();
 }
 
 function markStep(n,st){const el=document.getElementById(`step${n}`);if(!el)return;el.className=`step ${st}`;el.querySelector('.sdot').textContent=st==='done'?'✓':n;}

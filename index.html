@@ -2176,12 +2176,15 @@ function renderConfirmPanel(){
 }
 
 function finaliseConsolidation(){
-  // Get selected brands from checkboxes
   const checkboxes=document.querySelectorAll('#confirm-brand-list input[type=checkbox]');
   const selectedBrands=new Set();
   checkboxes.forEach(cb=>{if(cb.checked)selectedBrands.add(cb.getAttribute('data-brand'));});
   if(!selectedBrands.size){alert('Please select at least one brand to consolidate.');return;}
-  
+
+  // Save IC fixes (manual cfLine overrides) before wiping
+  const icFixes={};
+  S.consolidated.forEach(r=>{ if(r._uid) icFixes[r._uid]=r.cfLine; });
+
   S.consolidated=[];
   Object.values(S.brands).forEach(d=>{
     d.rows.forEach(r=>{
@@ -2192,6 +2195,12 @@ function finaliseConsolidation(){
       S.consolidated.push({...r,cfLine:cf,activity:ACT_OF[cf]||''});
     });
   });
+
+  // Re-apply IC fixes
+  if(Object.keys(icFixes).length){
+    S.consolidated.forEach(r=>{ if(r._uid && icFixes[r._uid]) r.cfLine=icFixes[r._uid]; });
+  }
+
   S.months=[...new Set(S.consolidated.map(r=>r.month))].sort(sortM);
   S.brandList=[...new Set(S.consolidated.map(r=>r.brand))].sort();
   S.excludedBrands=Object.keys(S.brands).filter(b=>!selectedBrands.has(b)&&!S.brands[b].isDup);

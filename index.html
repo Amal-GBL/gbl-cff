@@ -1817,7 +1817,9 @@ function readBrandSummary(wb){
   Object.entries(CF.summary_alias||{}).forEach(([k,v])=>lineMap[k]=v);
   ['Net Cash Flow from Operations','Net Cash Flow from Investments',
    'Net Cash Flow from Financing','Net Increase (Decrease) in cash',
-   'Opening Cash & Cash Equivalents','Closing Cash & Cash Equivalents','Check'].forEach(l=>lineMap[l]=l);
+   'Opening Cash & Cash Equivalents','Closing Cash & Cash Equivalents','Check',
+   'Cash','Bank Accounts','Deposits','Deposits - Sing','Mutual Fund','OD',
+   'Closing Balance'].forEach(l=>lineMap[l]=l);
   for(let i=1;i<raw.length;i++){
     const row=raw[i]||[];
     const label=row[0]?String(row[0]).trim():null;
@@ -2799,6 +2801,11 @@ function renderReport(){
       // Only set if HIST doesn't already have this month (HIST is authoritative)
       if(!closeLookup[brand][m]) closeLookup[brand][m]={};
       if(closeLookup[brand][m]._total===undefined) closeLookup[brand][m]._total=cv;
+      // Also populate split types (Cash, Bank Accounts, Deposits etc)
+      ['Cash','Bank Accounts','Deposits','Deposits - Sing','Mutual Fund','OD'].forEach(type=>{
+        if(lines[type]!==undefined && lines[type]!==0 && closeLookup[brand][m][type]===undefined)
+          closeLookup[brand][m][type]=lines[type];
+      });
     });
   });
 

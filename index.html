@@ -1391,8 +1391,8 @@ function renderGrid(){
     <div style="font-size:11px;color:var(--muted);">One file per brand · Jun-26</div>
   </div>`;
   Object.entries(S.brands).forEach(([key,d])=>{
-    // Only show brands actually uploaded this session (not session-restore stubs)
-    if(!d.filename && (!d.rows||d.rows.length===0) && !d.isDup) return;
+    // Only show brands actually uploaded this session (fresh flag set by parseFile)
+    if(!d.fresh) return;
     const m=S.mapping[key]||{};
     const u=Object.values(m).filter(v=>v===null).length;
     const isDup=d.isDup;
@@ -1469,7 +1469,7 @@ function removeBrand(n){
   }
 
   renderGrid();
-  document.getElementById('btn-map').disabled=Object.keys(S.brands).length===0;
+  document.getElementById('btn-map').disabled=!Object.values(S.brands).some(d=>d.fresh);
   saveSession();
 }
 
@@ -1477,7 +1477,7 @@ async function handleUpload(e){
   const files=Array.from(e.target.files);if(!files.length)return;
   document.getElementById('log-panel').style.display='';
   for(const f of files)await parseFile(f);
-  renderGrid();document.getElementById('btn-map').disabled=Object.keys(S.brands).length===0;
+  renderGrid();document.getElementById('btn-map').disabled=!Object.values(S.brands).some(d=>d.fresh);
   e.target.value='';
 }
 
@@ -1726,6 +1726,7 @@ async function parseFile(file){
     S.brands[brand]={
       rows, brandSummary, hasSummary,
       filename:file.name,
+      fresh:true,  // uploaded this session (not from restore)
       months:effectiveMonths.length,
       allMonths:effectiveMonths, latestMonth:effectiveLatest,
       isDup, displayName
@@ -1801,7 +1802,7 @@ function removeBrand(n){
   delete S.brands[n];
   delete S.mapping[n];
   renderGrid();
-  document.getElementById('btn-map').disabled=Object.keys(S.brands).length===0;
+  document.getElementById('btn-map').disabled=!Object.values(S.brands).some(d=>d.fresh);
 }
 
 async function handleUpload(e){
@@ -1809,7 +1810,7 @@ async function handleUpload(e){
   document.getElementById('log-panel').style.display='';
   for(const f of files) await parseFile(f);
   renderGrid();
-  document.getElementById('btn-map').disabled=Object.keys(S.brands).length===0;
+  document.getElementById('btn-map').disabled=!Object.values(S.brands).some(d=>d.fresh);
   e.target.value='';
 }
 
@@ -1920,7 +1921,7 @@ function onMapChange(sel){
 // CONSOLIDATE + RECON
 // ═══════════════════════════════════════════════════════════
 function consolidate(){
-  if(Object.entries(S.mapping).some(([b,m])=>!S.brands[b]?.isDup&&Object.values(m).some(v=>v===null))){
+  if(Object.entries(S.mapping).some(([b,m])=>S.brands[b]?.fresh&&!S.brands[b]?.isDup&&Object.values(m).some(v=>v===null))){
     alert('Some groupings still unmapped (red). Assign, mark Structural, or Ignore before proceeding.');return;
   }
 

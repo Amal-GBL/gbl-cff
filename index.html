@@ -933,7 +933,14 @@ function getAllMonths(){
 // ── SESSION PERSISTENCE ─────────────────────────────────────────────────────
 const SESSION_KEY = 'gbl_cf_session_' + CONSOLIDATION_MONTH;
 
+let _saveTimer=null;
 function saveSession(){
+  // Debounce: wait 2s after last call before pushing to GitHub
+  // This prevents race conditions when multiple remaps happen quickly
+  if(_saveTimer) clearTimeout(_saveTimer);
+  _saveTimer=setTimeout(()=>{ _saveTimer=null; _doSaveSession(); }, 2000);
+}
+function _doSaveSession(){
   try{
     runChecks(); // Ensure S.checks is current before saving
     const IC_LINES=['Debt Investment - Internal','Debt Repayments - Internal',

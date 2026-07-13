@@ -3399,7 +3399,8 @@ function updateBadges(){
 }
 
 function resetNewOnly(){
-  S={brands:{},mapping:{},consolidated:[],months:[],brandList:[],checks:{},issues:[],recon:{},excludedBrands:[]};
+  const _ic=S.icOverrides||{};
+  S={brands:{},mapping:{},consolidated:[],months:[],brandList:[],checks:{},issues:[],recon:{},excludedBrands:[],icOverrides:_ic};
   document.getElementById('log-body').innerHTML='';document.getElementById('log-panel').style.display='none';
   [1,2,3,4,5].forEach(i=>markStep(i,''));markStep(1,'active');
   renderGrid();showPage('upload');

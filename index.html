@@ -878,9 +878,6 @@ const FY_RANGES={
   FY27:{from:202604,to:202703},
 };
 
-function month2key(m){if(!m)return 0;const p=String(m).split('-');return parseInt(p[1]||0)*100+parseInt(p[0]||0);}
-function monthInFY(m,fy){if(fy==='ALL')return true;if(fy===CONSOLIDATION_MONTH)return m===CONSOLIDATION_MONTH;const r=FY_RANGES[fy];if(!r)return true;const k=month2key(m);return k>=r.from&&k<=r.to;}
-
 const TARGET=21;
 
 // ═══════════════════════════════════════════════════════════
@@ -898,36 +895,6 @@ let currentBrand='ALL';
 // COMBINED DATA GETTER
 // Merges historical (HIST) + new consolidated rows
 // ═══════════════════════════════════════════════════════════
-function getAllRows(brandFilter,fyFilter){
-  const rows=[];
-  // Historical rows (up to May-26)
-  const histBrands=brandFilter==='ALL'?Object.keys(HIST.data):[brandFilter].filter(b=>HIST.data[b]);
-  histBrands.forEach(brand=>{
-    Object.entries(HIST.data[brand]).forEach(([month,lines])=>{
-      if(!monthInFY(month,fyFilter)) return;
-      Object.entries(lines).forEach(([cfLine,d])=>{
-        if(d.net!==0||d.inflow!==0||d.outflow!==0)
-          rows.push({brand,month,cfLine,activity:ACT_OF[cfLine]||'',inflow:d.inflow,outflow:d.outflow,net:d.net,source:'hist'});
-      });
-    });
-  });
-  // New uploaded rows (Jun-26+)
-  S.consolidated.forEach(r=>{
-    if((brandFilter==='ALL'||r.brand===brandFilter)&&monthInFY(r.month,fyFilter))
-      rows.push({...r,source:'new'});
-  });
-  return rows;
-}
-
-function getAllBrands(){
-  return [...new Set([...Object.keys(HIST.data),...S.brandList])].sort();
-}
-function getAllMonths(){
-  const histMonths=new Set();
-  Object.values(HIST.data).forEach(b=>Object.keys(b).forEach(m=>histMonths.add(m)));
-  const newMonths=new Set(S.consolidated.map(r=>r.month));
-  return [...new Set([...histMonths,...newMonths])].sort(sortM);
-}
 
 // ═══════════════════════════════════════════════════════════
 // UPLOAD
@@ -1514,62 +1481,6 @@ function renderGrid(){
     g.innerHTML=h;
   }
   updateBadges();
-}
-
-function removeBrand(n){
-  const removedDisplay=S.brands[n]?.displayName||n.split('__dup__')[0];
-  if(!confirm(`Remove ${removedDisplay} from this consolidation?\n\nThis will:\n• Remove all their Jun-26 transactions from the report\n• Keep their mapping for future uploads\n• Allow you to re-upload a corrected file\n\nIC Loan fixes already done will be preserved.`)) return;
-
-  // Purge all consolidated rows for this brand (including any __dup__ variants)
-  const beforeCount=S.consolidated.length;
-  S.consolidated=S.consolidated.filter(r=>{
-    const baseBrand=r.brand.replace(/__dup__\w+$/,'');
-    return baseBrand!==removedDisplay && r.brand!==n;
-  });
-  console.log(`Removed ${beforeCount-S.consolidated.length} consolidated rows for ${removedDisplay}`);
-
-  // Remove from S.brands (keep mapping)
-  delete S.brands[n];
-  // Also remove any __dup__ variants of same brand
-  Object.keys(S.brands).forEach(key=>{
-    if((S.brands[key]?.displayName||key.split('__dup__')[0])===removedDisplay){
-      delete S.brands[key];
-    }
-  });
-
-  // Promote orphaned dup to real name if original is now gone
-  Object.keys(S.brands).forEach(key=>{
-    if(key.includes('__dup__')&&S.brands[key].displayName===removedDisplay){
-      const d=S.brands[key];const m=S.mapping[key];
-      d.isDup=false;
-      S.brands[removedDisplay]=d;S.mapping[removedDisplay]=m;
-      delete S.brands[key];delete S.mapping[key];
-    }
-  });
-
-  // Re-run consolidation to reflect the removal
-  if(S.consolidated.length>0 || Object.keys(S.brands).length>0){
-    buildRecon();
-    renderCheckUI();renderKPIs();renderReport();renderWaterfall();renderBrands();
-    renderRecon();
-  }
-
-  renderGrid();
-  document.getElementById('btn-map').disabled=!Object.values(S.brands).some(d=>d.fresh);
-  saveSession();
-}
-
-async function handleUpload(e){
-  const files=Array.from(e.target.files);if(!files.length)return;
-  document.getElementById('log-panel').style.display='';
-  for(const f of files)await parseFile(f);
-  renderGrid();document.getElementById('btn-map').disabled=!Object.values(S.brands).some(d=>d.fresh);
-  e.target.value='';
-}
-
-function plog(msg,type='info'){
-  const el=document.getElementById('log-body');
-  el.innerHTML+=`<div class="iss ${type}">${msg}</div>`;el.scrollTop=el.scrollHeight;
 }
 
 

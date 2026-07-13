@@ -2624,6 +2624,22 @@ function renderReport(){
     });
   });
 
+  // Fill gap months in closeLookup by carrying forward last known closing balance
+  allBrands.forEach(b=>{
+    if(!closeLookup[b]) return;
+    let lastTotal = null;
+    allMonthsSorted.forEach(m=>{
+      const entry = closeLookup[b][m];
+      if(entry && entry._total !== undefined){
+        lastTotal = entry._total;
+      } else if(lastTotal !== null){
+        // Gap month — carry forward
+        if(!closeLookup[b][m]) closeLookup[b][m] = {};
+        closeLookup[b][m]._total = lastTotal;
+      }
+    });
+  });
+
   // Brands in scope — include ALL brands from HIST even if no current month data
   // so closing balances carry forward for brands with no transactions this month
   const allBrands = selBrand==='ALL'
@@ -2633,10 +2649,21 @@ function renderReport(){
   // All months available
   const allMonthsSet = new Set();
   allBrands.forEach(b=>Object.keys(dataLookup[b]||{}).forEach(m=>allMonthsSet.add(m)));
-  // Always include current consolidation month so brands with no uploads still show closing balance
+  // Always include current consolidation month
   allMonthsSet.add(CONSOLIDATION_MONTH);
-  // Also include all months from HIST.closing so gap months show correct balances
+  // Include all months from HIST.closing
   allBrands.forEach(b=>Object.keys((HIST.closing||{})[b]||{}).forEach(m=>allMonthsSet.add(m)));
+  // Fill ALL months between first and last — no gaps
+  const _sortedSoFar = [...allMonthsSet].sort(sortM);
+  if(_sortedSoFar.length >= 2){
+    const _first = _sortedSoFar[0].split('-').map(Number);
+    const _last  = _sortedSoFar[_sortedSoFar.length-1].split('-').map(Number);
+    let _m = _first[0], _y = _first[1];
+    while(_y < _last[1] || (_y === _last[1] && _m <= _last[0])){
+      allMonthsSet.add(_m + '-' + _y);
+      _m++; if(_m > 12){ _m = 1; _y++; }
+    }
+  }
   const allMonthsSorted = [...allMonthsSet].sort(sortM);
 
   // FY of a month (Indian FY Apr-Mar)

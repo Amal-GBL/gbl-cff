@@ -567,7 +567,7 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
 
     <!-- ── CHECKS ── -->
     <div id="page-checks" class="hidden">
-      <div class="cg" id="check-grid" style="margin-bottom:14px;"></div>
+      <div class="cg" id="check-grid" style="margin-bottom:14px;grid-template-columns:repeat(3,1fr);"></div>
       <div class="panel">
         <div class="ph"><div class="pt">IC Loans Check — Group Level (Jun-26)</div></div>
         <div class="pb">
@@ -2425,10 +2425,7 @@ function renderCheckUI(){
   const c=S.checks;
   document.getElementById('check-grid').innerHTML=`
     <div class="ci ${c.recon.pass?'pass':'fail'}"><div class="ci-label">Recon Status</div><div class="ci-val">${c.recon.pass?'PASS':'FAIL'}</div><div class="ci-desc">${c.recon.fail} fail · ${c.recon.warn} no summary</div></div>
-    <div class="ci ${c.ic.pass?'pass':'fail'}"><div class="ci-label">IC Loans Net</div><div class="ci-val">${fmtN(c.ic.net)}</div><div class="ci-desc">Debt Inv-Int + Debt Repay-Int</div></div>
-    <div class="ci pass"><div class="ci-label">${CONSOLIDATION_MONTH} Inflow</div><div class="ci-val">${fmtCr(c.totals.inflow)}</div><div class="ci-desc">₹ Crores</div></div>
-    <div class="ci pass"><div class="ci-label">${CONSOLIDATION_MONTH} Outflow</div><div class="ci-val">${fmtCr(c.totals.outflow)}</div><div class="ci-desc">₹ Crores</div></div>
-    <div class="ci ${c.totals.net>=0?'pass':'fail'}"><div class="ci-label">Net CF</div><div class="ci-val">${fmtCr(c.totals.net)}</div><div class="ci-desc">Inflow − Outflow</div></div>
+    <div class="ci ${c.ic.pass?'pass':'fail'}"><div class="ci-label">IC Loans Net</div><div class="ci-val">${fmtN(c.ic.net)}</div><div class="ci-desc">Must = ₹0</div></div>
     <div class="ci ${c.brandCount===TARGET?'pass':'warn'}"><div class="ci-label">Brands</div><div class="ci-val">${c.brandCount} / ${TARGET}</div><div class="ci-desc">${c.brandCount<TARGET?'Still missing':'All uploaded ✓'}</div></div>`;
   const c2=S.checks.ic;
   // By-line summary rows (all 4 IC lines)

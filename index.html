@@ -2544,7 +2544,7 @@ function setFY(fy){
 
 function renderReport(){
   const selBrand = document.getElementById('rf-brand')?.value||'ALL';
-  const selFY    = window._currentFY||currentFY||'ALL';
+  const selFY    = 'ALL'; // Always show all months
 
   const thead = document.getElementById('rt-head');
   const tbody = document.getElementById('rt-body');
@@ -2633,6 +2633,10 @@ function renderReport(){
   // All months available
   const allMonthsSet = new Set();
   allBrands.forEach(b=>Object.keys(dataLookup[b]||{}).forEach(m=>allMonthsSet.add(m)));
+  // Always include current consolidation month so brands with no uploads still show closing balance
+  allMonthsSet.add(CONSOLIDATION_MONTH);
+  // Also include all months from HIST.closing so gap months show correct balances
+  allBrands.forEach(b=>Object.keys((HIST.closing||{})[b]||{}).forEach(m=>allMonthsSet.add(m)));
   const allMonthsSorted = [...allMonthsSet].sort(sortM);
 
   // FY of a month (Indian FY Apr-Mar)

@@ -1267,6 +1267,7 @@ function restoreSession(snap){
       if(S.brands[k]){S.brands[k].rows = rows; icRestored.push(k+'('+rows.length+')');}
     });
 
+    applyICOverrides(); // re-apply IC fixes after restore
     // NOTE: do NOT populate S.brands[brand].rows from consolidated here.
     // S.consolidated is the single source of truth for transaction data.
     // S.brands[brand].rows is only populated when a file is freshly uploaded via parseFile.
@@ -1971,6 +1972,7 @@ async function consolidate(){
 
 
   populateFilters();runChecks();
+  applyICOverrides(); // re-apply any saved IC line overrides
   await pushMappingToGitHub(); // persist mappings for future uploads
   markStep(2,'done');markStep(3,'active');showPage('recon');renderRecon();
 }
@@ -2078,6 +2080,7 @@ function finaliseConsolidation(){
     const base=(S.brands[b]?.displayName||b).replace(/__dup__\w+$/,'');
     return !selectedBrands.has(b)&&!selectedBrands.has(base)&&!S.brands[b]?.isDup;
   });
+  applyICOverrides(); // re-apply saved IC fixes after brand filter
   populateFilters();runChecks();
   saveSession();
   markStep(5,'done');markStep(6,'active');showPage('closemonth');
@@ -3372,7 +3375,8 @@ function updateBadges(){
 }
 
 function resetNewOnly(){
-  S={brands:{},mapping:{},consolidated:[],months:[],brandList:[],checks:{},issues:[],recon:{},excludedBrands:[]};
+  const savedOverrides=S.icOverrides||{};
+  S={brands:{},mapping:{},consolidated:[],months:[],brandList:[],checks:{},issues:[],recon:{},excludedBrands:[],icOverrides:savedOverrides,reportConfirmed:false};
   document.getElementById('log-body').innerHTML='';document.getElementById('log-panel').style.display='none';
   [1,2,3,4,5].forEach(i=>markStep(i,''));markStep(1,'active');
   renderGrid();showPage('upload');

@@ -1449,9 +1449,10 @@ function dismissSession(){
 }
 
 async function init(){
+  renderGrid(); // render immediately so upload tile shows right away
   await loadMappingFromGitHub();  // load saved mappings FIRST before session restore
   await checkForSavedSession();   // then restore session (which uses loaded mappings)
-  renderGrid();
+  renderGrid(); // re-render in case session restore added brand stubs
 }
 
 function renderGrid(){

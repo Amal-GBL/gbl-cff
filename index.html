@@ -2136,23 +2136,26 @@ function renderRecon(){
     <div class="ci ${fail===0?'pass':'fail'}"><div class="ci-label">Mismatches</div><div class="ci-val">${fail}</div><div class="ci-desc">Data ≠ Brand Summary</div></div>
     <div class="ci pass"><div class="ci-label">Matched</div><div class="ci-val">${pass}</div><div class="ci-desc">Data = Summary ✓</div></div>`;
   // Show correct bottom panel based on mode
-  const inCorrectionMode=Object.values(S.brands).some(d=>d.fresh&&!d.isDup);
+  // Correction mode = re-uploading specific brand(s) on top of existing consolidated session
+  // NOT correction mode if S.consolidated is empty (fresh start) or all brands are fresh
+  const freshBrandNames=new Set(Object.values(S.brands).filter(d=>d.fresh&&!d.isDup).map(d=>d.displayName||""));
+  const nonFreshConsolidatedBrands=new Set(S.consolidated.map(r=>r.brand).filter(b=>!freshBrandNames.has(b)));
+  const inCorrectionMode=freshBrandNames.size>0&&nonFreshConsolidatedBrands.size>0;
   const confirmPanel=document.getElementById('confirm-panel');
   const correctionsPanel=document.getElementById('corrections-proceed-panel');
   if(confirmPanel) confirmPanel.style.display=inCorrectionMode?'none':'';
   if(correctionsPanel) correctionsPanel.style.display=inCorrectionMode?'':'none';
 
   const brand=document.getElementById('recon-brand').value;
-  const freshBrands=new Set(Object.values(S.brands).filter(d=>d.fresh&&!d.isDup).map(d=>d.displayName||''));
   const brandsToShow=brand==='ALL'
-    ? (inCorrectionMode&&!window._reconShowAll ? S.brandList.filter(b=>freshBrands.has(b)) : S.brandList)
+    ? (inCorrectionMode&&!window._reconShowAll ? S.brandList.filter(b=>freshBrandNames.has(b)) : S.brandList)
     : [brand];
   let html='';
   if(inCorrectionMode&&brand==='ALL'&&!window._reconShowAll){
-    const otherPass=S.brandList.filter(b=>!freshBrands.has(b)&&Object.values(S.recon[b]||{}).every(r=>r.pass||!r.hasSummary)).length;
-    const otherFail=S.brandList.filter(b=>!freshBrands.has(b)&&Object.values(S.recon[b]||{}).some(r=>r.hasSummary&&!r.pass)).length;
+    const otherPass=S.brandList.filter(b=>!freshBrandNames.has(b)&&Object.values(S.recon[b]||{}).every(r=>r.pass||!r.hasSummary)).length;
+    const otherFail=S.brandList.filter(b=>!freshBrandNames.has(b)&&Object.values(S.recon[b]||{}).some(r=>r.hasSummary&&!r.pass)).length;
     html+=`<div style="padding:10px 14px;margin-bottom:12px;background:#f8f7f4;border-radius:6px;border:1px solid var(--rule);font-size:12px;display:flex;align-items:center;gap:12px;">
-      <div style="flex:1"><span style="font-weight:700;color:var(--muted)">Other ${S.brandList.length-freshBrands.size} brands already verified:</span>
+      <div style="flex:1"><span style="font-weight:700;color:var(--muted)">Other ${S.brandList.length-freshBrandNames.size} brands already verified:</span>
       &nbsp;<span style="color:var(--green);font-weight:600">${otherPass} ✓ pass</span>
       ${otherFail>0?`&nbsp;· <span style="color:var(--red);font-weight:600">${otherFail} ✗ fail (pre-existing)</span>`:''}</div>
       <button onclick="window._reconShowAll=true;renderRecon()"

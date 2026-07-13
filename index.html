@@ -964,7 +964,7 @@ function saveSession(){
       }]))
     };
     // GitHub is the single source of truth
-    pushSessionToGitHub(snapshot);
+    pushSessionToGitHub(snapshot); // fire-and-forget intentional for sync callers
     console.log('Session saved for', CONSOLIDATION_MONTH);
   }catch(e){console.warn('Session save failed:',e);}
 }
@@ -1044,6 +1044,69 @@ async function removeFromConsolidation(brand){
 
 
 
+
+async function pushMappingAndSession(){
+  // Single GitHub commit containing BOTH mapping.json and session.json
+  // Prevents race condition when both are pushed separately
+  try{
+    runChecks();
+    const IC_LINES=['Debt Investment - Internal','Debt Repayments - Internal',
+      'Debt Repayment Receipts - Internal','Loan - Internal'];
+    const icRows={};
+    Object.entries(S.brands).forEach(([k,d])=>{
+      if(!d.rows) return;
+      const subset=d.rows.filter(r=>r.month===CONSOLIDATION_MONTH&&IC_LINES.includes(S.mapping[k]?.[r.grouping]));
+      if(subset.length) icRows[k]=subset;
+    });
+    const snapshot={
+      month:CONSOLIDATION_MONTH,savedAt:new Date().toISOString(),
+      consolidated:S.consolidated,months:S.months,brandList:S.brandList,
+      recon:S.recon,checks:S.checks,issues:S.issues,excludedBrands:S.excludedBrands,
+      mapping:S.mapping,icRows,reportConfirmed:S.reportConfirmed||false,
+      icOverrides:S.icOverrides||{},
+      brandMeta:Object.fromEntries(Object.entries(S.brands).map(([k,d])=>[k,{
+        displayName:d.displayName,filename:d.filename,isDup:d.isDup,
+        rowCount:d.rows?d.rows.length:0,brandSummary:d.brandSummary||{},
+        _pendingCorrection:d._pendingCorrection||false
+      }]))
+    };
+    // Clean mapping
+    const cleanMap={};
+    Object.entries(S.mapping).forEach(([brand,lines])=>{
+      const kept={};
+      Object.entries(lines).forEach(([grp,val])=>{if(val&&val!==null)kept[grp]=val;});
+      if(Object.keys(kept).length) cleanMap[brand.replace(/__dup__\w+$/, '')]=kept;
+    });
+    const sessionBody=JSON.stringify(snapshot,null,0);
+    const mappingBody=JSON.stringify(cleanMap);
+    const hdrs={'Authorization':`Bearer ${GH_SYNC.token}`,'Accept':'application/vnd.github+json','Content-Type':'application/json'};
+    const base=`https://api.github.com/repos/${GH_SYNC.repo}`;
+    // Create both blobs
+    const [sb,mb]= await Promise.all([
+      fetch(`${base}/git/blobs`,{method:'POST',headers:hdrs,body:JSON.stringify({content:btoa(unescape(encodeURIComponent(sessionBody))),encoding:'base64'})}).then(r=>r.json()),
+      fetch(`${base}/git/blobs`,{method:'POST',headers:hdrs,body:JSON.stringify({content:btoa(unescape(encodeURIComponent(mappingBody))),encoding:'base64'})}).then(r=>r.json())
+    ]);
+    // Get current HEAD
+    const refR=await fetch(`${base}/git/ref/heads/${GH_SYNC.branch}`,{headers:hdrs});
+    const refSha=(await refR.json()).object.sha;
+    const commitR=await fetch(`${base}/git/commits/${refSha}`,{headers:hdrs});
+    const treeSha=(await commitR.json()).tree.sha;
+    // Single tree with both files
+    const newTreeR=await fetch(`${base}/git/trees`,{method:'POST',headers:hdrs,
+      body:JSON.stringify({base_tree:treeSha,tree:[
+        {path:GH_SYNC.file,mode:'100644',type:'blob',sha:sb.sha},
+        {path:GH_SYNC.mapFile,mode:'100644',type:'blob',sha:mb.sha}
+      ]})});
+    const newTreeSha=(await newTreeR.json()).sha;
+    const newCommitR=await fetch(`${base}/git/commits`,{method:'POST',headers:hdrs,
+      body:JSON.stringify({message:`Session sync: ${CONSOLIDATION_MONTH} · ${new Date().toISOString().slice(0,10)}`,tree:newTreeSha,parents:[refSha]})});
+    const newCommitSha=(await newCommitR.json()).sha;
+    await fetch(`${base}/git/refs/heads/${GH_SYNC.branch}`,{method:'PATCH',headers:hdrs,
+      body:JSON.stringify({sha:newCommitSha,force:true})});
+    setSyncBadge('✓ Saved','#2e7d32');
+    console.log('Mapping + session saved in single commit, rows:',snapshot.consolidated.length);
+  }catch(e){setSyncBadge('⚠ Save failed','#b71c1c');console.warn('pushMappingAndSession failed:',e);}
+}
 
 async function loadMappingFromGitHub(){
   try{
@@ -1314,7 +1377,7 @@ async function deleteSessionFromGitHub(){
   }catch(e){ console.warn('clearSession GitHub failed:', e); }
 }
 
-async function checkForSavedSession(){
+async async function checkForSavedSession(){
   try{
     setSyncBadge('⟳ Checking cloud…', '#a0b4c8');
     const snap = await fetchSessionFromGitHub();
@@ -1385,9 +1448,9 @@ function dismissSession(){
   if(banner) banner.style.display='none';
 }
 
-function init(){
-  checkForSavedSession();
-  loadMappingFromGitHub();  // pre-load saved mappings before any upload
+async function init(){
+  await loadMappingFromGitHub();  // load saved mappings FIRST before session restore
+  await checkForSavedSession();   // then restore session (which uses loaded mappings)
   renderGrid();
 }
 
@@ -1973,7 +2036,7 @@ async function consolidate(){
 
   populateFilters();runChecks();
   applyICOverrides(); // re-apply any saved IC line overrides
-  await pushMappingToGitHub(); // persist mappings for future uploads
+  await pushMappingAndSession(); // single commit: mappings + session together
   markStep(2,'done');markStep(3,'active');showPage('recon');renderRecon();
 }
 

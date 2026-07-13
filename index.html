@@ -1076,6 +1076,7 @@ async function removeFromConsolidation(brand){
   const before=S.consolidated.length;
   DBG.sep('REMOVE: '+brand);
   DBG.log('Consolidated before remove: '+before+' rows','info');
+  window._reconShowAll=false; // reset show-all so recon tab focuses on re-uploaded brand
   S.consolidated=S.consolidated.filter(r=>r.brand.replace(/__dup__\w+$/,'')!==brand);
   DBG.log('Consolidated after remove: '+S.consolidated.length+' rows (removed '+(before-S.consolidated.length)+')','info');
   Object.keys(S.brands).forEach(k=>{if((S.brands[k].displayName||k).replace(/__dup__\w+$/,'')=== brand)delete S.brands[k];});
@@ -2199,9 +2200,28 @@ function renderRecon(){
     <div class="ci ${fail===0?'pass':'fail'}"><div class="ci-label">Mismatches</div><div class="ci-val">${fail}</div><div class="ci-desc">Data ≠ Brand Summary</div></div>
     <div class="ci pass"><div class="ci-label">Matched</div><div class="ci-val">${pass}</div><div class="ci-desc">Data = Summary ✓</div></div>`;
   const brand=document.getElementById('recon-brand').value;
-  const brands=brand==='ALL'?S.brandList:[brand];
+  // During a corrections cycle, only show fresh brands in detail by default
+  const freshBrands=new Set(Object.entries(S.brands).filter(([,d])=>d.fresh&&!d.isDup).map(([,d])=>d.displayName||''));
+  const inCorrectionMode=freshBrands.size>0&&freshBrands.size<S.brandList.length&&!window._reconShowAll;
+  const brandsToShow=brand==='ALL'
+    ? (inCorrectionMode?S.brandList.filter(b=>freshBrands.has(b)):S.brandList)
+    : [brand];
   let html='';
-  brands.forEach(br=>{
+  if(inCorrectionMode&&brand==='ALL'){
+    // Show a compact summary row for non-fresh brands
+    const otherPass=S.brandList.filter(b=>!freshBrands.has(b)&&S.recon[b]&&Object.values(S.recon[b]).every(r=>r.pass||!r.hasSummary)).length;
+    const otherFail=S.brandList.filter(b=>!freshBrands.has(b)&&S.recon[b]&&Object.values(S.recon[b]).some(r=>r.hasSummary&&!r.pass)).length;
+    const otherWarn=S.brandList.filter(b=>!freshBrands.has(b)&&S.recon[b]&&Object.values(S.recon[b]).every(r=>!r.hasSummary)).length;
+    html+=`<div style="padding:10px 14px;margin-bottom:12px;background:#f8f7f4;border-radius:6px;border:1px solid var(--rule);font-size:12px;">
+      <span style="font-weight:700;color:var(--muted)">Other ${S.brandList.length-freshBrands.size} brands (already verified):</span>
+      &nbsp;<span style="color:var(--green);font-weight:600">${otherPass} ✓ pass</span>
+      ${otherFail>0?`&nbsp;· <span style="color:var(--red);font-weight:600">${otherFail} ✗ fail</span>`:''}
+      ${otherWarn>0?`&nbsp;· <span style="color:var(--muted)">${otherWarn} no summary</span>`:''}
+      &nbsp;<button onclick="document.getElementById('recon-brand').value='ALL';window._reconShowAll=true;renderRecon()" 
+        style="margin-left:10px;font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid var(--rule);background:#fff;cursor:pointer">Show all</button>
+    </div>`;
+  }
+  brandsToShow.forEach(br=>{
     const brR=S.recon[br]||{};const months=Object.keys(brR).sort(sortM);if(!months.length)return;
     const allOk=months.every(m=>brR[m].pass||!brR[m].hasSummary);
     const brLabel=(S.brands[br]?.displayName)||br.split('__dup__')[0];
@@ -2422,6 +2442,9 @@ function runChecks(){
   if(rw>0)S.issues.push({type:'warn',msg:`${rw} brand(s) have no summary for comparison.`});
   if(S.checks.brandCount<TARGET)S.issues.push({type:'warn',msg:`${S.checks.brandCount}/${TARGET} brands uploaded — IC check not final.`});
   if(!S.issues.length)S.issues.push({type:'ok',msg:'All checks passed.'});
+  DBG.sep('CHECKS');
+  DBG.log('IC net: '+Math.round(icNet)+' ('+Object.entries(icBrand).map(([b,d])=>b+':'+Math.round(d.net)).join(', ')+')', Math.abs(icNet)<1000?'ok':'error');
+  DBG.log('Brands: '+S.checks.brandCount+'/'+TARGET,'info');
   renderCheckUI();renderKPIs();renderReport();renderWaterfall();renderBrands();
   markStep(4,'done');markStep(5,'active');
 }

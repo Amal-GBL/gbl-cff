@@ -2290,15 +2290,6 @@ async function saveICChangesNow(){
   const btn=document.getElementById('btn-save-ic');
   const badge=document.getElementById('ic-save-badge');
   if(btn) btn.disabled=true;
-
-  // Show what we are about to save
-  const overrides=S.icOverrides||{};
-  const overrideCount=Object.keys(overrides).length;
-  const overrideList=Object.entries(overrides).map(([k,v])=>`${k} → ${v}`).join('\n');
-  const icRows=S.consolidated.filter(r=>['Debt Investment - Internal','Debt Repayments - Internal','Debt Repayment Receipts - Internal','Loan - Internal'].includes(r.cfLine));
-
-  alert(`IC State before save:\n\nicOverrides (${overrideCount}):\n${overrideList||'(none)'}\n\nIC rows in consolidated: ${icRows.length}\n${icRows.slice(0,5).map(r=>`${r.brand} | ${r.grouping} | ${r.cfLine} | ${r.net}`).join('\n')}`);
-
   if(badge) badge.textContent='⟳ Saving...';
   try{
     await saveSessionAsync();

@@ -3336,6 +3336,14 @@ function exportCurrentMonth(){
   XLSX.writeFile(wb,`GBL_CashFlow_${month.replace('-','_')}_LineItems.xlsx`);
 }
 
+function confirmReport(){
+  S.reportConfirmed = true;
+  saveSession();
+  const b = document.getElementById('btn-confirm-report');
+  if(b){ b.textContent = '✓ Report Confirmed'; b.style.background = '#2e7d32'; b.disabled = true; }
+  setSyncBadge('✓ Report confirmed', '#2e7d32');
+}
+
 function exportExcel(){
   const brand=document.getElementById('rf-brand')?document.getElementById('rf-brand').value:'ALL';
   const rows=getAllRows(brand,currentFY);

@@ -1723,6 +1723,12 @@ async function parseFile(file){
       m[g]=found||null;
     });
     // Mappings come from session snapshot (S.mapping) — no localStorage needed
+    // Also merge in any previously saved mapping from mapping.json (loaded at init)
+    // Saved mapping fills gaps only — auto-map and exact matches take priority
+    const savedForBrand=S.mapping[brand]||{};
+    Object.keys(m).forEach(grp=>{
+      if(m[grp]===null && savedForBrand[grp]) m[grp]=savedForBrand[grp];
+    });
     S.mapping[brand]=m;
 
     // ── Register brand ──────────────────────────────────────
@@ -1957,6 +1963,7 @@ function consolidate(){
 
 
   populateFilters();runChecks();
+  pushMappingToGitHub(); // persist mappings for future uploads
   markStep(2,'done');markStep(3,'active');showPage('recon');renderRecon();
 }
 

@@ -1564,9 +1564,9 @@ async function pushSessionToGitHub(snapshot){
         tree: newTreeSha, parents:[refSha]})});
     const newCommitSha = (await newCommitR.json()).sha;
 
-    // Step 6: Update ref
+    // Step 6: Update ref (force:true safe for session data, not code)
     const patchR = await fetch(`${base}/git/refs/heads/${GH_SYNC.branch}`, {method:'PATCH', headers:hdrs,
-      body: JSON.stringify({sha: newCommitSha, force: false})});
+      body: JSON.stringify({sha: newCommitSha, force: true})});
     if(patchR.ok){
       setSyncBadge('✓ Synced to cloud', '#2e7d32');
     } else {

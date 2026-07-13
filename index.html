@@ -1287,162 +1287,144 @@ function renderCloseMonth(){
 
 async function runCorrections(){
   if(_correctionPendingFiles.length === 0){
-    alert('Please drop the corrected files first.');return;
+    alert('Please drop the corrected files first.'); return;
   }
 
   const btn = document.getElementById('corr-run-btn');
-  if(btn){btn.disabled=true;btn.textContent='Processing...';}
+  if(btn){btn.disabled=true; btn.textContent='Processing...';}
 
-  // Track which brands are being corrected — capture display names BEFORE parsing
-  const correctionDisplayNames = new Set(
+  // Step 1: Capture which brands are pending BEFORE parsing
+  const pendingNames = new Set(
     Object.entries(S.brands)
       .filter(([k,d]) => d._pendingCorrection)
-      .map(([k,d]) => (d.displayName || k).replace(/__dup__\w+$/,''))
+      .map(([k,d]) => (d.displayName||k).replace(/__dup__\w+$/,''))
   );
+  console.log('[Corrections] Pending brands:', [...pendingNames]);
 
-  // Parse each uploaded file
-  // IMPORTANT: temporarily remove pending stubs so parseFile doesn't create __dup__ keys
-  const pendingStubs = {};
-  Object.keys(S.brands).forEach(k=>{
-    if(S.brands[k]._pendingCorrection){
-      pendingStubs[k] = S.brands[k];
-      delete S.brands[k];
-    }
+  // Step 2: Remove pending stubs so parseFile creates clean keys (no __dup__)
+  const savedStubs = {};
+  [...pendingNames].forEach(name => {
+    Object.keys(S.brands).forEach(k => {
+      if((S.brands[k].displayName||k).replace(/__dup__\w+$/,'') === name){
+        savedStubs[name] = savedStubs[name] || S.brands[k];
+        delete S.brands[k];
+      }
+    });
   });
+  console.log('[Corrections] Removed stubs, S.brands keys:', Object.keys(S.brands));
 
-  let processed = 0;
+  // Step 3: Parse files
+  let parsed = 0;
   for(const file of _correctionPendingFiles){
-    try{
-      await parseFile(file);
-      processed++;
-    }catch(e){ console.error('Error processing', file.name, e); }
+    try{ await parseFile(file); parsed++; }
+    catch(e){ console.error('[Corrections] parseFile error:', e); }
   }
+  console.log('[Corrections] Parsed', parsed, 'files');
+  console.log('[Corrections] S.brands keys after parse:', Object.keys(S.brands));
 
-  if(processed === 0){
-    // Restore stubs if nothing parsed
-    Object.assign(S.brands, pendingStubs);
-    alert('No files could be processed. Check the file format.');
-    if(btn){btn.disabled=false;btn.textContent='↺ Re-consolidate';}
+  if(parsed === 0){
+    // Restore stubs
+    Object.values(savedStubs).forEach(s=>{ S.brands[s.displayName||'?']=s; });
+    alert('Could not process files. Check format.');
+    if(btn){btn.disabled=false; btn.textContent='↺ Re-consolidate';}
     return;
   }
 
-  // Auto-apply saved mappings to newly uploaded brands
-  // Only flag as null if genuinely new grouping not seen before
-  let hasNewUnmapped = false;
-  Object.entries(S.brands).forEach(([key,d])=>{
-    if(!d.rows||d.rows.length===0) return;
-    if(!S.mapping[key]) S.mapping[key]={};
-    d.rows.forEach(r=>{
-      if(S.mapping[key][r.grouping]===undefined){
-        // Check if any other brand has this grouping mapped
-        const existingMap = Object.values(S.mapping).reduce((found,m)=>{
-          return found || (m[r.grouping] !== undefined ? m[r.grouping] : null);
-        }, null);
-        S.mapping[key][r.grouping] = existingMap || null;
-        if(!existingMap) hasNewUnmapped = true;
+  // Step 4: Apply saved mappings to newly parsed brands
+  let hasUnmapped = false;
+  Object.keys(S.brands).forEach(brandKey => {
+    const d = S.brands[brandKey];
+    if(!d.rows || d.rows.length === 0) return;
+    const name = (d.displayName||brandKey).replace(/__dup__\w+$/,'');
+    if(!pendingNames.has(name)) return; // not a correction brand
+    if(!S.mapping[brandKey]) S.mapping[brandKey] = {};
+    d.rows.forEach(r => {
+      if(S.mapping[brandKey][r.grouping] === undefined){
+        // Find from other brands or saved mapping
+        let found = null;
+        for(const [b,m] of Object.entries(S.mapping)){
+          if(m[r.grouping] !== undefined){ found = m[r.grouping]; break; }
+        }
+        S.mapping[brandKey][r.grouping] = found;
+        if(!found) hasUnmapped = true;
       }
     });
   });
 
-  if(hasNewUnmapped){
-    if(!confirm('Some new groupings need mapping. Go to Map by Brand to assign them?\n\nClick OK to go to mapping, or Cancel to proceed anyway (new groupings will be ignored).')){
-      // Proceed anyway - mark nulls as ignore
-      Object.entries(S.brands).forEach(([key,d])=>{
-        if(!d.rows||d.rows.length===0) return;
-        Object.keys(S.mapping[key]||{}).forEach(grp=>{
-          if(S.mapping[key][grp]===null) S.mapping[key][grp]='__ignore__';
+  if(hasUnmapped){
+    if(!confirm('Some new groupings need mapping. Go to Map by Brand?\n\nOK = go to mapping, Cancel = ignore unmapped rows')){
+      Object.keys(S.brands).forEach(brandKey => {
+        Object.keys(S.mapping[brandKey]||{}).forEach(grp => {
+          if(S.mapping[brandKey][grp]===null) S.mapping[brandKey][grp]='__ignore__';
         });
       });
     } else {
+      if(btn){btn.disabled=false; btn.textContent='↺ Re-consolidate';}
       showPage('mapping');
-      if(btn){btn.disabled=false;btn.textContent='↺ Re-consolidate';}
       return;
     }
   }
 
-  // Additive consolidation — only process the corrected brands
-  // Preserve IC fixes on existing rows
-  const icFixes={};
-  S.consolidated.forEach(r=>{ if(r._uid) icFixes[r._uid]=r.cfLine; });
-
-  // Build correctionBrands AFTER parsing — includes any new dup keys created during parse
-  const correctionBrands = new Set(
-    Object.keys(S.brands).filter(k=>{
-      const dn=(S.brands[k].displayName||k).replace(/__dup__\w+$/,'');
-      return correctionDisplayNames.has(dn);
-    })
-  );
-
-  // Remove old rows for corrected brands from S.consolidated
-  S.consolidated = S.consolidated.filter(r=>{
+  // Step 5: Remove old rows for these brands from S.consolidated
+  const before = S.consolidated.length;
+  S.consolidated = S.consolidated.filter(r => {
     const base = r.brand.replace(/__dup__\w+$/,'');
-    return !correctionDisplayNames.has(base) && !correctionBrands.has(r.brand);
+    return !pendingNames.has(base);
   });
+  console.log('[Corrections] Removed', before - S.consolidated.length, 'old rows');
 
-  // Add new rows for corrected brands only
-  let addedCount = 0;
-  Object.entries(S.brands).forEach(([brandKey,d])=>{
-    if(!d.rows||d.rows.length===0) return;
-    const displayName = (d.displayName || brandKey).replace(/__dup__\w+$/,'');
-    if(!correctionDisplayNames.has(displayName)) return;
-
-    // Debug: log what months exist in this brand's rows
+  // Step 6: Add new rows for correction brands only
+  let added = 0;
+  Object.entries(S.brands).forEach(([brandKey, d]) => {
+    if(!d.rows || d.rows.length === 0) return;
+    const displayName = (d.displayName||brandKey).replace(/__dup__\w+$/,'');
+    if(!pendingNames.has(displayName)) return;
     const monthCounts = {};
-    d.rows.forEach(r=>{ monthCounts[r.month]=(monthCounts[r.month]||0)+1; });
-    console.log(`${displayName} rows by month:`, JSON.stringify(monthCounts));
-    console.log(`Looking for CONSOLIDATION_MONTH: '${CONSOLIDATION_MONTH}'`);
-
-    d.rows.forEach(r=>{
-      if(r.month !== CONSOLIDATION_MONTH){
-        // Log first few mismatches
-        if(addedCount === 0) console.log(`Month mismatch: '${r.month}' !== '${CONSOLIDATION_MONTH}'`);
-        return;
-      }
-      const cf = S.mapping[r.brand]?.[r.grouping] || S.mapping[brandKey]?.[r.grouping] || S.mapping[displayName]?.[r.grouping];
-      if(!cf||cf==='__structural__'||cf==='__ignore__') return;
+    d.rows.forEach(r => { monthCounts[r.month]=(monthCounts[r.month]||0)+1; });
+    console.log('[Corrections]', displayName, 'month distribution:', JSON.stringify(monthCounts));
+    d.rows.forEach(r => {
+      if(r.month !== CONSOLIDATION_MONTH) return;
+      const cf = S.mapping[brandKey]?.[r.grouping] || S.mapping[displayName]?.[r.grouping];
+      if(!cf || cf==='__structural__' || cf==='__ignore__') return;
       S.consolidated.push({...r, brand:displayName, cfLine:cf, activity:ACT_OF[cf]||''});
-      addedCount++;
+      added++;
     });
-    console.log(`${displayName}: added ${addedCount} rows to consolidated`);
   });
+  console.log('[Corrections] Added', added, 'new rows to consolidated');
 
-  // Re-apply IC fixes
-  S.consolidated.forEach(r=>{ if(r._uid&&icFixes[r._uid]) r.cfLine=icFixes[r._uid]; });
+  // Step 7: Re-apply IC overrides
   applyICOverrides();
 
-  // Update months/brandList
+  // Step 8: Update state
   S.months=[...new Set(S.consolidated.map(r=>r.month))].sort(sortM);
   S.brandList=[...new Set(S.consolidated.map(r=>r.brand.replace(/__dup__\w+$/,'')))].sort();
 
-  // Clear pending state
-  Object.values(S.brands).forEach(d=>delete d._pendingCorrection);
-  _correctionPendingFiles=[];
+  // Step 9: Clear pending state
+  Object.values(S.brands).forEach(d => delete d._pendingCorrection);
+  _correctionPendingFiles = [];
 
-  // Re-run checks and update report
+  // Step 10: Update UI
   runChecks();
   renderKPIs();
   renderReport();
 
-  // Log what we're about to save
-  const chumbakCheck = S.consolidated.filter(r=>r.brand===([...correctionDisplayNames][0])).length;
-  console.log(`runCorrections: ${[...correctionDisplayNames].join(',')} rows in S.consolidated: ${chumbakCheck}`);
-  console.log(`Total consolidated rows: ${S.consolidated.length}`);
+  // Step 11: Save session
+  console.log('[Corrections] Saving session with', S.consolidated.length, 'total rows');
+  await saveSessionAsync();
+  console.log('[Corrections] Session saved');
 
-  // Save session — single call after everything is settled
-  saveSession();
+  if(btn){btn.disabled=false; btn.textContent='↺ Re-consolidate';}
 
-  if(btn){btn.disabled=false;btn.textContent='↺ Re-consolidate';}
-
-  // Stay on corrections page and refresh it
   renderCorrections();
 
-  // Show success toast
   const t=document.createElement('div');
   t.style.cssText='position:fixed;bottom:24px;right:24px;background:#2e7d32;color:#fff;padding:10px 20px;border-radius:6px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.2)';
-  t.textContent=`✓ ${[...correctionDisplayNames].join(', ')} re-consolidated successfully`;
+  t.textContent='✓ '+[...pendingNames].join(', ')+' re-consolidated ('+added+' rows)';
   document.body.appendChild(t);
-  setTimeout(()=>t.remove(),4000);
+  setTimeout(()=>t.remove(),5000);
 }
+
+
 
 async function loadMappingFromGitHub(){
   try{
@@ -1503,6 +1485,43 @@ async function pushMappingToGitHub(){
 }
 
 // ── GitHub Session Sync ───────────────────────────────────────────────────────
+async function saveSessionAsync(){
+  try{
+    const IC_LINES=['Debt Investment - Internal','Debt Repayments - Internal',
+      'Debt Repayment Receipts - Internal','Loan - Internal'];
+    const icRows={};
+    Object.entries(S.brands).forEach(([k,d])=>{
+      if(!d.rows) return;
+      const subset=d.rows.filter(r=>
+        r.month===CONSOLIDATION_MONTH&&IC_LINES.includes(S.mapping[k]?.[r.grouping])
+      );
+      if(subset.length) icRows[k]=subset;
+    });
+    const snapshot = {
+      month: CONSOLIDATION_MONTH,
+      savedAt: new Date().toISOString(),
+      consolidated: S.consolidated,
+      months: S.months,
+      brandList: S.brandList,
+      recon: S.recon,
+      checks: S.checks,
+      issues: S.issues,
+      excludedBrands: S.excludedBrands,
+      mapping: S.mapping,
+      icRows,
+      reportConfirmed: S.reportConfirmed||false,
+      icOverrides: S.icOverrides||{},
+      brandMeta: Object.fromEntries(Object.entries(S.brands).map(([k,d])=>[k,{
+        displayName:d.displayName,filename:d.filename,isDup:d.isDup,
+        rowCount:d.rows?d.rows.length:0,
+        brandSummary:d.brandSummary||{}
+      }]))
+    };
+    await pushSessionToGitHub(snapshot);
+    console.log('Session saved async, rows:', snapshot.consolidated.length);
+  }catch(e){ console.warn('saveSessionAsync failed:',e); }
+}
+
 async function pushSessionToGitHub(snapshot){
   try{
     const body = JSON.stringify(snapshot, null, 0);
@@ -1678,10 +1697,27 @@ async function checkForSavedSession(){
     const snap = await fetchSessionFromGitHub();
     if(snap && snap.month === CONSOLIDATION_MONTH){
       _pendingSnap = snap;
-      _showSessionBanner(snap, 'cloud');
-      // If corrections page is open, re-render now that snap is available
-      const corrPage = document.getElementById('page-corrections');
-      if(corrPage && !corrPage.classList.contains('hidden')) renderCorrections();
+      // Auto-restore session immediately — no manual click needed
+      const restored = restoreSession(snap);
+      if(restored){
+        populateFilters();
+        renderCheckUI();renderKPIs();renderReport();renderWaterfall();renderBrands();
+        renderRecon();renderConfirmPanel();
+        [1,2,3,4].forEach(s=>markStep(s,'done'));
+        markStep(5,'active');
+        // Show the restored notice but don't redirect — let user stay on current page
+        const nb=document.getElementById('session-restored-notice');
+        if(nb) nb.style.display='';
+        // Hide the resume banner
+        const banner=document.getElementById('session-banner');
+        if(banner) banner.style.display='none';
+        setSyncBadge('☁ Session restored', '#1565c0');
+        // Re-render corrections page if it's open
+        const corrPage = document.getElementById('page-corrections');
+        if(corrPage && !corrPage.classList.contains('hidden')) renderCorrections();
+      } else {
+        _showSessionBanner(snap, 'cloud');
+      }
     } else if(snap && snap.month){
       setSyncBadge('☁ ' + snap.month + ' session on cloud', '#888');
     } else {

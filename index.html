@@ -434,7 +434,7 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
     <div class="nav-item" onclick="openSettings()" id="nav-settings"><span class="nav-icon">⚙</span> CFO Settings</div>
     <div class="nav-sec">Reports</div>
     <div class="nav-item" onclick="showPage('report')" id="nav-report"><span class="nav-icon">📊</span> Consolidated Report</div>
-    <div class="nav-item" onclick="showPage('waterfall')" id="nav-waterfall"><span class="nav-icon">🌊</span> Cash Waterfall</div>
+    
     <div class="nav-item" onclick="showPage('brands')" id="nav-brands"><span class="nav-icon">🏷</span> Brand Breakdown</div>
   </div>
   <div class="sb-foot" id="sb-foot" style="cursor:default">
@@ -2624,22 +2624,6 @@ function renderReport(){
     });
   });
 
-  // Fill gap months in closeLookup by carrying forward last known closing balance
-  allBrands.forEach(b=>{
-    if(!closeLookup[b]) return;
-    let lastTotal = null;
-    allMonthsSorted.forEach(m=>{
-      const entry = closeLookup[b][m];
-      if(entry && entry._total !== undefined){
-        lastTotal = entry._total;
-      } else if(lastTotal !== null){
-        // Gap month — carry forward
-        if(!closeLookup[b][m]) closeLookup[b][m] = {};
-        closeLookup[b][m]._total = lastTotal;
-      }
-    });
-  });
-
   // Brands in scope — include ALL brands from HIST even if no current month data
   // so closing balances carry forward for brands with no transactions this month
   const allBrands = selBrand==='ALL'
@@ -2651,19 +2635,8 @@ function renderReport(){
   allBrands.forEach(b=>Object.keys(dataLookup[b]||{}).forEach(m=>allMonthsSet.add(m)));
   // Always include current consolidation month
   allMonthsSet.add(CONSOLIDATION_MONTH);
-  // Include all months from HIST.closing
+  // Include all months from HIST.closing for the selected brands
   allBrands.forEach(b=>Object.keys((HIST.closing||{})[b]||{}).forEach(m=>allMonthsSet.add(m)));
-  // Fill ALL months between first and last — no gaps
-  const _sortedSoFar = [...allMonthsSet].sort(sortM);
-  if(_sortedSoFar.length >= 2){
-    const _first = _sortedSoFar[0].split('-').map(Number);
-    const _last  = _sortedSoFar[_sortedSoFar.length-1].split('-').map(Number);
-    let _m = _first[0], _y = _first[1];
-    while(_y < _last[1] || (_y === _last[1] && _m <= _last[0])){
-      allMonthsSet.add(_m + '-' + _y);
-      _m++; if(_m > 12){ _m = 1; _y++; }
-    }
-  }
   const allMonthsSorted = [...allMonthsSet].sort(sortM);
 
   // FY of a month (Indian FY Apr-Mar)

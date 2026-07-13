@@ -594,7 +594,11 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
             <div class="alert aw" style="margin-bottom:12px;"><span>ℹ️</span><div>If IC loans don't net to zero, a grouping may be mapped to the wrong CF line. Find the transaction below and remap it. The IC check will update immediately.</div></div>
             <div id="ic-remap-body"></div>
           </div>
-          <button class="btn btn-sm btn-o" style="margin-top:10px;" onclick="toggleICRemap()">🔧 Fix IC Loan Mismatch</button>
+          <div style="display:flex;gap:10px;margin-top:10px;align-items:center;">
+  <button class="btn btn-sm btn-o" onclick="toggleICRemap()">🔧 Fix IC Loan Mismatch</button>
+  <button class="btn btn-sm btn-p" onclick="saveICChangesNow()" id="btn-save-ic">💾 Save IC Changes</button>
+  <span id="ic-save-badge" style="font-size:11px;color:var(--muted)"></span>
+</div>
         </div>
       </div>
       <div class="panel">
@@ -2281,6 +2285,21 @@ function renderICRemap(){
   body.innerHTML=h2;
 }
 
+
+async function saveICChangesNow(){
+  const btn=document.getElementById('btn-save-ic');
+  const badge=document.getElementById('ic-save-badge');
+  if(btn) btn.disabled=true;
+  if(badge) badge.textContent='⟳ Saving...';
+  try{
+    await saveSessionAsync();
+    if(badge) badge.textContent='✓ Saved '+new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+  }catch(e){
+    if(badge) badge.textContent='⚠ Save failed';
+  } finally {
+    if(btn) btn.disabled=false;
+  }
+}
 
 function applyICOverrides(){
   if(!S.icOverrides||!Object.keys(S.icOverrides).length) return;

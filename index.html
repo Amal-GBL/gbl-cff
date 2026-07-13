@@ -2073,7 +2073,7 @@ function finaliseConsolidation(){
   });
   applyICOverrides(); // re-apply saved IC fixes after brand filter
   populateFilters();runChecks();
-  saveSession();
+  await saveSessionAsync();
   markStep(5,'done');markStep(6,'active');showPage('closemonth');
 }
 
@@ -2111,9 +2111,9 @@ function buildRecon(){
   });
 }
 
-function proceedFromCorrections(){
+async function proceedFromCorrections(){
   populateFilters();runChecks();
-  saveSession();
+  await saveSessionAsync();
   markStep(3,'done');markStep(4,'active');showPage('checks');
 }
 
@@ -2343,7 +2343,6 @@ async function remapICRow(sel){
   }
 
   runChecks();
-  // FIX: await the save so GitHub push completes before user can navigate away
   setSyncBadge('⟳ Saving IC remap…','#a0b4c8');
   await saveSessionAsync();
   renderICRemap();
@@ -3300,17 +3299,20 @@ function exportFilteredLI(){
   XLSX.writeFile(wb,'GBL_LineItems_Filtered.xlsx');
 }
 
-function remapLineItem(sel){
+async function remapLineItem(sel){
   const ci=parseInt(sel.getAttribute('data-ci'));
   const newLine=sel.value;
   if(!newLine||isNaN(ci)||ci<0||ci>=S.consolidated.length) return;
-  // IC lines ARE allowed as remap targets here
-  // If remapping FROM a non-IC line TO an IC line, it will appear in IC check
   S.consolidated[ci].cfLine=newLine;
   S.consolidated[ci].activity=ACT_OF[newLine]||'';
+  // Also store in icOverrides if it's an IC line remap
+  const r=S.consolidated[ci];
+  if(!S.icOverrides) S.icOverrides={};
+  S.icOverrides[r.brand+'||'+r.grouping]=newLine;
   runChecks();
-  saveSession();
-  renderLineItems();// re-render to reflect new CF line in table
+  setSyncBadge('⟳ Saving…','#a0b4c8');
+  await saveSessionAsync();
+  renderLineItems();
 }
 
 function exportCurrentMonth(){

@@ -1004,12 +1004,14 @@ function renderCorrections(){
     rowCounts[b] = (rowCounts[b] || 0) + 1;
   });
 
-  // Pending re-upload brands
-  const pendingReupload = new Set(
-    Object.entries(S.brands)
-      .filter(([k,d]) => d._pendingCorrection)
-      .map(([k,d]) => d.displayName || k.replace(/__dup__\w+$/, ''))
-  );
+  // Pending re-upload brands — check both live S.brands and restored brandMeta
+  const pendingReupload = new Set();
+  Object.entries(S.brands).forEach(([k,d])=>{
+    if(d._pendingCorrection) pendingReupload.add((d.displayName||k).replace(/__dup__\w+$/,''));
+  });
+  Object.entries(snapBrandMeta).forEach(([k,m])=>{
+    if(m._pendingCorrection) pendingReupload.add((m.displayName||k).replace(/__dup__\w+$/,''));
+  });
 
   // Brand rows
   const rows = allBrands.map(brand => {

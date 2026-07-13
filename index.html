@@ -1352,20 +1352,21 @@ async function runCorrections(){
   const icFixes={};
   S.consolidated.forEach(r=>{ if(r._uid) icFixes[r._uid]=r.cfLine; });
 
-  // Remove old rows for corrected brands from S.consolidated
-  S.consolidated = S.consolidated.filter(r=>{
-    const base = r.brand.replace(/__dup__\w+$/,'');
-    return !correctionBrands.has(base) && !correctionBrands.has(r.brand) && !correctionBrandKeys.has(r.brand);
-  });
-
-  // Add new rows for corrected brands only
-  // After parsing, find ALL brand keys whose display name matches a corrected brand
+  // Build correctionBrands AFTER parsing — includes any new dup keys created during parse
   const correctionBrands = new Set(
     Object.keys(S.brands).filter(k=>{
       const dn=(S.brands[k].displayName||k).replace(/__dup__\w+$/,'');
       return correctionDisplayNames.has(dn);
     })
   );
+
+  // Remove old rows for corrected brands from S.consolidated
+  S.consolidated = S.consolidated.filter(r=>{
+    const base = r.brand.replace(/__dup__\w+$/,'');
+    return !correctionDisplayNames.has(base) && !correctionBrands.has(r.brand);
+  });
+
+  // Add new rows for corrected brands only
   Object.entries(S.brands).forEach(([brandKey,d])=>{
     if(!d.rows||d.rows.length===0) return;
     const displayName = (d.displayName || brandKey).replace(/__dup__\w+$/,'');
@@ -1375,7 +1376,7 @@ async function runCorrections(){
       if(r.month !== CONSOLIDATION_MONTH) return;
       const cf = S.mapping[r.brand]?.[r.grouping] || S.mapping[brandKey]?.[r.grouping];
       if(!cf||cf==='__structural__'||cf==='__ignore__') return;
-      S.consolidated.push({...r, brand:r.brand.replace(/__dup__\w+$/,''), cfLine:cf, activity:ACT_OF[cf]||''});
+      S.consolidated.push({...r, brand:displayName, cfLine:cf, activity:ACT_OF[cf]||''});
     });
   });
 
@@ -1407,7 +1408,7 @@ async function runCorrections(){
   // Show success toast
   const t=document.createElement('div');
   t.style.cssText='position:fixed;bottom:24px;right:24px;background:#2e7d32;color:#fff;padding:10px 20px;border-radius:6px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.2)';
-  t.textContent=`✓ ${[...correctionBrands].join(', ')} re-consolidated successfully`;
+  t.textContent=`✓ ${[...correctionDisplayNames].join(', ')} re-consolidated successfully`;
   document.body.appendChild(t);
   setTimeout(()=>t.remove(),4000);
 }

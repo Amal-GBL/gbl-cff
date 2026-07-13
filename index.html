@@ -1650,6 +1650,7 @@ async function parseFile(file){
     const hdrVals=(raw[hdr]||[]).map(x=>String(x||'').trim());
     const ci=n=>hdrVals.findIndex(h=>h.toLowerCase()===n.toLowerCase());
     const iG=ci('Grouping'),iM=ci('Month'),iI=ci('Inflow'),iO=ci('Outflow');
+    const iNET=ci('Net')>=0?ci('Net'):ci('NET')>=0?ci('NET'):ci('BankBalINR')>=0?ci('BankBalINR'):ci('Bank Bal (INR)')>=0?ci('Bank Bal (INR)'):-1;
     // Additional detail columns
     const iBANK=ci('BANK')>=0?ci('BANK'):ci('Bank')>=0?ci('Bank'):ci('BANK Account');
     const iGL=ci('GL');
@@ -1673,7 +1674,12 @@ async function parseFile(file){
       if(!month||!/^\d{1,2}-\d{4}$/.test(month)) continue;
       const inf=pN(iI>=0?row[iI]:null);
       const out=pN(iO>=0?row[iO]:null);
-      if(inf===0&&out===0) continue;
+      // If both inflow and outflow are zero, try Net column directly
+      let netVal=inf-out;
+      if(inf===0&&out===0&&iNET>=0){
+        netVal=pN(row[iNET]);
+        if(netVal===0) continue; // genuinely zero, skip
+      } else if(inf===0&&out===0) continue;
       monthCounts[month]=(monthCounts[month]||0)+1;
       const rawDate=iDATE>=0?row[iDATE]:null;
       let dateStr='';
@@ -1684,13 +1690,13 @@ async function parseFile(file){
       }
       rows.push({
         brand,month,grouping:String(grp).trim(),
-        inflow:inf,outflow:out,net:inf-out,
+        inflow:inf,outflow:out,net:netVal,
         bank:iBANK>=0?String(row[iBANK]||'').trim():'',
         gl:iGL>=0?String(row[iGL]||'').trim():'',
         date:dateStr,
         particulars:iPART>=0?String(row[iPART]||'').trim():'',
         vchNo:iVCH>=0?String(row[iVCH]||'').trim():'',
-        _uid: brand+'||'+String(grp).trim()+'||'+Math.round(inf-out)+'||'+(iVCH>=0?String(row[iVCH]||'').trim():'')
+        _uid: brand+'||'+String(grp).trim()+'||'+Math.round(netVal)+'||'+(iVCH>=0?String(row[iVCH]||'').trim():'')
       });
     }
 

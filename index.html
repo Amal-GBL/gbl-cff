@@ -1046,7 +1046,9 @@ async function removeFromConsolidation(brand){
   Object.keys(S.brands).forEach(k=>{if((S.brands[k].displayName||k).replace(/__dup__\w+$/,'')=== brand)delete S.brands[k];});
   S.brandList=S.brandList.filter(b=>b!==brand&&b.replace(/__dup__\w+$/,'')!==brand);
   runChecks();renderKPIs();renderReport();renderCorrections();
-  setSyncBadge('\u29d9 Saving\u2026','#e65100');
+  // Cancel any pending debounced save so it can't overwrite the removal
+  if(_saveTimer){clearTimeout(_saveTimer);_saveTimer=null;}
+  setSyncBadge('⧙ Saving…','#e65100');
   await saveSessionAsync();
   setSyncBadge('\u2713 Removed & saved','#2e7d32');
   console.log('Removed '+(before-S.consolidated.length)+' '+brand+' rows, session saved');

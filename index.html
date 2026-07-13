@@ -1095,7 +1095,7 @@ function renderCorrections(){
   if(hasPending) el.innerHTML += uploadSection;
 }
 
-function markForCorrection(brand){
+async function markForCorrection(brand){
   if(!confirm(`Remove ${brand} from the consolidation?\n\nTheir data will be removed and you can re-upload a corrected file below.\n\nAll other brands and IC fixes remain untouched.`)) return;
 
   // Purge consolidated rows for this brand
@@ -1103,21 +1103,25 @@ function markForCorrection(brand){
     r.brand.replace(/__dup__\w+$/, '') !== brand
   );
   // Delete all brand keys for this brand from S.brands so re-upload gets clean key
-  // Keep the mapping intact
   const keysToRemove = Object.keys(S.brands).filter(k=>{
     const dn=(S.brands[k].displayName||k).replace(/__dup__\w+$/,'');
     return dn===brand;
   });
   keysToRemove.forEach(k=>delete S.brands[k]);
 
-  // Add a pending stub under the clean brand name so Corrections page shows it
+  // Add a pending stub
   S.brands[brand]={displayName:brand,filename:'',isDup:false,rows:[],
                    _pendingCorrection:true,brandSummary:{},rowCount:0};
-  // Re-run checks to reflect removal
+
+  // Re-run checks and update UI
   runChecks();
   renderCheckUI();renderKPIs();renderReport();
-  saveSession();
   renderCorrections();
+
+  // Save immediately and wait — show indicator so user knows not to refresh yet
+  setSyncBadge('⟳ Saving removal…', '#e65100');
+  await saveSessionAsync();
+  setSyncBadge('✓ Removal saved — safe to refresh', '#2e7d32');
 }
 
 function cancelCorrection(brand){

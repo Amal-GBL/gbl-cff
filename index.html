@@ -1899,14 +1899,16 @@ function onMapChange(sel){
   // Save this mapping to localStorage immediately
   const displayName=S.brands[brand]?.displayName||brand;
   // Mapping saved in session snapshot via saveSession()
-  pushMappingToGitHub();
+  // Debounce the GitHub push — don't fire on every dropdown change
+  clearTimeout(window._mapPushTimer);
+  window._mapPushTimer=setTimeout(()=>pushMappingToGitHub(),2000);
   renderGrid();
 }
 
 // ═══════════════════════════════════════════════════════════
 // CONSOLIDATE + RECON
 // ═══════════════════════════════════════════════════════════
-function consolidate(){
+async function consolidate(){
   if(Object.entries(S.mapping).some(([b,m])=>S.brands[b]?.fresh&&!S.brands[b]?.isDup&&Object.values(m).some(v=>v===null))){
     alert('Some groupings still unmapped (red). Assign, mark Structural, or Ignore before proceeding.');return;
   }
@@ -1969,7 +1971,7 @@ function consolidate(){
 
 
   populateFilters();runChecks();
-  pushMappingToGitHub(); // persist mappings for future uploads
+  await pushMappingToGitHub(); // persist mappings for future uploads
   markStep(2,'done');markStep(3,'active');showPage('recon');renderRecon();
 }
 

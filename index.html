@@ -567,12 +567,12 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
 
     <!-- ── CHECKS ── -->
     <div id="page-checks" class="hidden">
-      <div class="cg" id="check-grid" style="margin-bottom:14px;grid-template-columns:repeat(3,1fr);"></div>
+      <div class="cg" id="check-grid" style="margin-bottom:14px;"></div>
       <div class="panel">
         <div class="ph"><div class="pt">IC Loans Check — Group Level (Jun-26)</div></div>
         <div class="pb">
           <div class="alert ai" style="margin-bottom:12px;"><span>ℹ️</span><div><strong>Rule:</strong> Across all brands, <em>Debt Investment - Internal</em> (Loan given) must net to zero against <em>Debt Repayments - Internal</em> (Loan repaid) at group level. Valid only after all 21 brands are uploaded.</div></div>
-          <div class="cg" id="ic-checks" style="grid-template-columns:repeat(1,1fr);margin-bottom:12px;max-width:300px;"></div>
+          <div class="cg" id="ic-checks" style="grid-template-columns:repeat(3,1fr);margin-bottom:12px;"></div>
           <div id="ic-line-summary" style="margin-bottom:4px;"></div>
           <div class="scroll-x">
             <table class="rt" id="ic-table">
@@ -2425,7 +2425,10 @@ function renderCheckUI(){
   const c=S.checks;
   document.getElementById('check-grid').innerHTML=`
     <div class="ci ${c.recon.pass?'pass':'fail'}"><div class="ci-label">Recon Status</div><div class="ci-val">${c.recon.pass?'PASS':'FAIL'}</div><div class="ci-desc">${c.recon.fail} fail · ${c.recon.warn} no summary</div></div>
-    <div class="ci ${c.ic.pass?'pass':'fail'}"><div class="ci-label">IC Loans Net</div><div class="ci-val">${fmtN(c.ic.net)}</div><div class="ci-desc">Must = ₹0</div></div>
+    <div class="ci ${c.ic.pass?'pass':'fail'}"><div class="ci-label">IC Loans Net</div><div class="ci-val">${fmtN(c.ic.net)}</div><div class="ci-desc">Debt Inv-Int + Debt Repay-Int</div></div>
+    <div class="ci pass"><div class="ci-label">${CONSOLIDATION_MONTH} Inflow</div><div class="ci-val">${fmtCr(c.totals.inflow)}</div><div class="ci-desc">₹ Crores</div></div>
+    <div class="ci pass"><div class="ci-label">${CONSOLIDATION_MONTH} Outflow</div><div class="ci-val">${fmtCr(c.totals.outflow)}</div><div class="ci-desc">₹ Crores</div></div>
+    <div class="ci ${c.totals.net>=0?'pass':'fail'}"><div class="ci-label">Net CF</div><div class="ci-val">${fmtCr(c.totals.net)}</div><div class="ci-desc">Inflow − Outflow</div></div>
     <div class="ci ${c.brandCount===TARGET?'pass':'warn'}"><div class="ci-label">Brands</div><div class="ci-val">${c.brandCount} / ${TARGET}</div><div class="ci-desc">${c.brandCount<TARGET?'Still missing':'All uploaded ✓'}</div></div>`;
   const c2=S.checks.ic;
   // By-line summary rows (all 4 IC lines)
@@ -2471,7 +2474,9 @@ function renderCheckUI(){
   }
   document.getElementById('ic-body').innerHTML=rows.join('');
   document.getElementById('ic-checks').innerHTML=`
-    <div class="ci ${c2.pass?'pass':'fail'}"><div class="ci-label">Portfolio Net</div><div class="ci-val">${fmtN(c2.net)}</div><div class="ci-desc">Must = ₹0</div></div>`;
+    <div class="ci ${c2.pass?'pass':'fail'}"><div class="ci-label">Portfolio Net</div><div class="ci-val">${fmtN(c2.net)}</div><div class="ci-desc">Must = ₹0</div></div>
+    <div class="ci pass"><div class="ci-label">Total Inflow</div><div class="ci-val pos">${fmtN(c2.given)}</div><div class="ci-desc">All IC inflow lines</div></div>
+    <div class="ci pass"><div class="ci-label">Total Outflow</div><div class="ci-val neg">${fmtN(c2.repaid)}</div><div class="ci-desc">Debt Repayments - Internal</div></div>`;
   document.getElementById('issue-log').innerHTML=S.issues.map(i=>`<div class="iss ${i.type}">${i.msg}</div>`).join('');
 }
 

@@ -950,7 +950,8 @@ function saveSession(){
       brandMeta: Object.fromEntries(Object.entries(S.brands).map(([k,d])=>[k,{
         displayName:d.displayName,filename:d.filename,isDup:d.isDup,
         rowCount:d.rows?d.rows.length:0,
-        brandSummary:d.brandSummary||{}
+        brandSummary:d.brandSummary||{},
+        _pendingCorrection:d._pendingCorrection||false
       }]))
     };
     // GitHub is the single source of truth
@@ -1521,7 +1522,8 @@ async function saveSessionAsync(){
       brandMeta: Object.fromEntries(Object.entries(S.brands).map(([k,d])=>[k,{
         displayName:d.displayName,filename:d.filename,isDup:d.isDup,
         rowCount:d.rows?d.rows.length:0,
-        brandSummary:d.brandSummary||{}
+        brandSummary:d.brandSummary||{},
+        _pendingCorrection:d._pendingCorrection||false
       }]))
     };
     await pushSessionToGitHub(snapshot);
@@ -1643,7 +1645,8 @@ function restoreSession(snap){
     Object.entries(snap.brandMeta||{}).forEach(([k,m])=>{
       S.brands[k] = {displayName:m.displayName,filename:m.filename,
         isDup:m.isDup,rows:[],rowCount:m.rowCount,
-        brandSummary:m.brandSummary||{}};
+        brandSummary:m.brandSummary||{},
+        _pendingCorrection:m._pendingCorrection||false};
     });
     // Restore IC rows
     Object.entries(snap.icRows||{}).forEach(([k,rows])=>{

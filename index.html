@@ -2051,7 +2051,7 @@ function renderConfirmPanel(){
   }
 }
 
-function finaliseConsolidation(){
+async function finaliseConsolidation(){
   const checkboxes=document.querySelectorAll('#confirm-brand-list input[type=checkbox]');
   const selectedBrands=new Set();
   checkboxes.forEach(cb=>{if(cb.checked)selectedBrands.add(cb.getAttribute('data-brand'));});

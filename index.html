@@ -1247,9 +1247,7 @@ async function fetchSessionFromGitHub(){
       'Cache-Control': 'no-cache'
     };
     const base = `https://api.github.com/repos/${GH_SYNC.repo}`;
-    // Cache-buster on ref fetch — GitHub API can return stale HEAD for ~5s after push
-    const cb = '?cb=' + Date.now();
-    const refR = await fetch(`${base}/git/ref/heads/${GH_SYNC.branch}${cb}`, {headers:hdrs, cache:'no-store'});
+    const refR = await fetch(`${base}/git/ref/heads/${GH_SYNC.branch}`, {headers:hdrs});
     if(!refR.ok) return null;
     const refSha = (await refR.json()).object.sha;
     const commitR = await fetch(`${base}/git/commits/${refSha}`, {headers:hdrs});

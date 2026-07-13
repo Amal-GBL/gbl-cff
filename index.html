@@ -1410,7 +1410,12 @@ async function runCorrections(){
   renderKPIs();
   renderReport();
 
-  // Save session
+  // Log what we're about to save
+  const chumbakCheck = S.consolidated.filter(r=>r.brand===([...correctionDisplayNames][0])).length;
+  console.log(`runCorrections: ${[...correctionDisplayNames].join(',')} rows in S.consolidated: ${chumbakCheck}`);
+  console.log(`Total consolidated rows: ${S.consolidated.length}`);
+
+  // Save session — single call after everything is settled
   saveSession();
 
   if(btn){btn.disabled=false;btn.textContent='↺ Re-consolidate';}
@@ -2713,7 +2718,6 @@ function runChecks(){
   if(!S.issues.length)S.issues.push({type:'ok',msg:'All checks passed.'});
   renderCheckUI();renderKPIs();renderReport();renderWaterfall();renderBrands();
   markStep(4,'done');markStep(5,'active');
-  saveSession();
 }
 
 function renderCheckUI(){

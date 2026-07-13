@@ -1243,8 +1243,7 @@ async function fetchSessionFromGitHub(){
     // Always fetch from GitHub blob API — avoids EC2 serving stale cached session.json
     const hdrs = {
       'Authorization': `Bearer ${GH_SYNC.token}`,
-      'Accept': 'application/vnd.github+json',
-      'Cache-Control': 'no-cache'
+      'Accept': 'application/vnd.github+json'
     };
     const base = `https://api.github.com/repos/${GH_SYNC.repo}`;
     const refR = await fetch(`${base}/git/ref/heads/${GH_SYNC.branch}`, {headers:hdrs});
@@ -2052,7 +2051,7 @@ function renderConfirmPanel(){
   }
 }
 
-async function finaliseConsolidation(){
+function finaliseConsolidation(){
   const checkboxes=document.querySelectorAll('#confirm-brand-list input[type=checkbox]');
   const selectedBrands=new Set();
   checkboxes.forEach(cb=>{if(cb.checked)selectedBrands.add(cb.getAttribute('data-brand'));});
@@ -2074,7 +2073,7 @@ async function finaliseConsolidation(){
   });
   applyICOverrides(); // re-apply saved IC fixes after brand filter
   populateFilters();runChecks();
-  await saveSessionAsync();
+  saveSession();
   markStep(5,'done');markStep(6,'active');showPage('closemonth');
 }
 
@@ -2112,9 +2111,9 @@ function buildRecon(){
   });
 }
 
-async function proceedFromCorrections(){
+function proceedFromCorrections(){
   populateFilters();runChecks();
-  await saveSessionAsync();
+  saveSession();
   markStep(3,'done');markStep(4,'active');showPage('checks');
 }
 
@@ -2344,6 +2343,7 @@ async function remapICRow(sel){
   }
 
   runChecks();
+  // FIX: await the save so GitHub push completes before user can navigate away
   setSyncBadge('⟳ Saving IC remap…','#a0b4c8');
   await saveSessionAsync();
   renderICRemap();
@@ -3300,20 +3300,17 @@ function exportFilteredLI(){
   XLSX.writeFile(wb,'GBL_LineItems_Filtered.xlsx');
 }
 
-async function remapLineItem(sel){
+function remapLineItem(sel){
   const ci=parseInt(sel.getAttribute('data-ci'));
   const newLine=sel.value;
   if(!newLine||isNaN(ci)||ci<0||ci>=S.consolidated.length) return;
+  // IC lines ARE allowed as remap targets here
+  // If remapping FROM a non-IC line TO an IC line, it will appear in IC check
   S.consolidated[ci].cfLine=newLine;
   S.consolidated[ci].activity=ACT_OF[newLine]||'';
-  // Also store in icOverrides if it's an IC line remap
-  const r=S.consolidated[ci];
-  if(!S.icOverrides) S.icOverrides={};
-  S.icOverrides[r.brand+'||'+r.grouping]=newLine;
   runChecks();
-  setSyncBadge('⟳ Saving…','#a0b4c8');
-  await saveSessionAsync();
-  renderLineItems();
+  saveSession();
+  renderLineItems();// re-render to reflect new CF line in table
 }
 
 function exportCurrentMonth(){

@@ -1351,7 +1351,7 @@ async function deleteSessionFromGitHub(){
   }catch(e){ console.warn('clearSession GitHub failed:', e); }
 }
 
-async async function checkForSavedSession(){
+async function checkForSavedSession(){
   try{
     setSyncBadge('⟳ Checking cloud…', '#a0b4c8');
     const snap = await fetchSessionFromGitHub();

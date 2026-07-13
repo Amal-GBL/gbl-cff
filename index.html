@@ -889,6 +889,7 @@ const DBG = {
   log(msg, type='info'){
     const ts = new Date().toTimeString().slice(0,8);
     this._entries.push({ts, msg, type});
+    if(!this._el) this._el=document.getElementById('dbg-log'); // grab lazily
     if(this._el) this._render();
     console.log(`[DBG ${type}] ${msg}`);
   },
@@ -910,6 +911,7 @@ const DBG = {
     this._open=!this._open;
     const panel=document.getElementById('dbg-panel');
     if(panel) panel.style.display=this._open?'flex':'none';
+    if(!this._el) this._el=document.getElementById('dbg-log'); // grab lazily
     if(this._open&&this._el) this._render();
   },
   _render(){
@@ -3501,7 +3503,8 @@ function fmtS(v){const a=Math.abs(v);return a>=1e7?`₹${(v/1e7).toFixed(1)}Cr`:
 
 init();
 populateFilters();
-DBG.init();
+// DBG panel HTML is after this script block — init once DOM is fully parsed
+document.addEventListener('DOMContentLoaded', ()=>DBG.init());
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ROUTER — Single URL, three views

@@ -508,7 +508,13 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
         </div>
         <div class="pb">
           <div class="alert ai"><span>ℹ️</span><div>Upload each brand's <strong>Jun-26</strong> cash file. The tool reads the <strong>"3 tier CF - Direct method"</strong> sheet for reconciliation, and the <strong>Data</strong> sheet for transaction detail.<br>The consolidated report will combine your pre-loaded FY22–May26 history with the new Jun-26 data.</div></div>
-          <div class="upload-grid" id="upload-grid"></div>
+          <div class="upload-grid" id="upload-grid">
+            <div class="uc" onclick="document.getElementById('finput').click()" style="cursor:pointer">
+              <div style="font-size:24px;margin-bottom:6px;">📂</div>
+              <div style="font-size:13px;font-weight:600;margin-bottom:2px;">Drop / Click to Add</div>
+              <div style="font-size:11px;color:var(--muted);">One file per brand · Jun-26</div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1459,12 +1465,9 @@ async function init(){
 function renderGrid(){
   const g=document.getElementById('upload-grid');
   if(!g) return;
-  let h=`<div class="uc">
-    <input type="file" multiple accept=".xlsx,.xls,.xlsb" onchange="handleUpload(event)">
-    <div style="font-size:24px;margin-bottom:6px;">📂</div>
-    <div style="font-size:13px;font-weight:600;margin-bottom:2px;">Drop / Click to Add</div>
-    <div style="font-size:11px;color:var(--muted);">One file per brand · Jun-26</div>
-  </div>`;
+  // Static drop zone tile is in HTML — only render brand cards here
+  const staticTile=g.querySelector('.uc:first-child');
+  let h='';
   Object.entries(S.brands).forEach(([key,d])=>{
     // Only show brands actually uploaded this session (fresh flag set by parseFile)
     if(!d.fresh) return;
@@ -1501,7 +1504,14 @@ function renderGrid(){
       </div>
     </div>`;
   });
-  g.innerHTML=h;
+  // Preserve the static drop zone tile, append brand cards after it
+  if(staticTile){
+    // Remove old brand cards (not the static tile)
+    [...g.children].forEach(c=>{ if(c!==staticTile) c.remove(); });
+    g.insertAdjacentHTML('beforeend', h);
+  } else {
+    g.innerHTML=h;
+  }
   updateBadges();
 }
 

@@ -1556,17 +1556,9 @@ async function pushSessionToGitHub(snapshot){
   }
 }
 
-async function fetchSessionFromGitHub(){
+async async function fetchSessionFromGitHub(){
   try{
-    // First try local path (served by Nginx from same origin — fast, no CORS)
-    const localR = await fetch('/dev/session.json?t='+Date.now());
-    if(localR.ok){
-      const snap = await localR.json();
-      if(snap && snap.month) return snap;
-    }
-  }catch(_){}
-  try{
-    // Fallback: GitHub blob API (for non-EC2 environments)
+    // Always fetch from GitHub blob API — avoids EC2 serving stale cached session.json
     const hdrs = {
       'Authorization': `Bearer ${GH_SYNC.token}`,
       'Accept': 'application/vnd.github+json'

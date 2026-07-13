@@ -1399,6 +1399,7 @@ async async function checkForSavedSession(){
         const banner=document.getElementById('session-banner');
         if(banner) banner.style.display='none';
         setSyncBadge('☁ Session restored', '#1565c0');
+        renderGrid(); // refresh upload grid with restored brand stubs
         // Re-render corrections page if it's open
         const corrPage = document.getElementById('page-corrections');
         if(corrPage && !corrPage.classList.contains('hidden')) renderCorrections();
@@ -3415,6 +3416,7 @@ function showPage(page){
     corrections:'Corrections & Re-upload',closemonth:'Close Month — '+CONSOLIDATION_MONTH,
     report:'Consolidated Cash Flow Report',waterfall:'Cash Waterfall',brands:'Brand Breakdown'};
   document.getElementById('page-title').textContent=titles[page]||page;
+  if(page==='upload')renderGrid();
   if(page==='report'){populateFilters();renderReport();const b=document.getElementById('btn-confirm-report');if(b&&S.reportConfirmed){b.textContent='✓ Report Confirmed';b.style.background='#2e7d32';b.disabled=true;}}
   if(page==='waterfall')renderWaterfall();
   if(page==='brands')renderBrands();

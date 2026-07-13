@@ -1101,15 +1101,17 @@ function markForCorrection(brand){
   S.consolidated = S.consolidated.filter(r =>
     r.brand.replace(/__dup__\w+$/, '') !== brand
   );
-  // Remove brand from S.brands entirely so re-upload creates a fresh clean entry
-  Object.keys(S.brands).forEach(k=>{
+  // Delete all brand keys for this brand from S.brands so re-upload gets clean key
+  // Keep the mapping intact
+  const keysToRemove = Object.keys(S.brands).filter(k=>{
     const dn=(S.brands[k].displayName||k).replace(/__dup__\w+$/,'');
-    if(dn===brand){
-      // Keep a stub with _pendingCorrection so corrections page knows it's pending
-      S.brands[k]={displayName:brand,filename:'',isDup:false,rows:[],
-                   _pendingCorrection:true,brandSummary:{},rowCount:0};
-    }
+    return dn===brand;
   });
+  keysToRemove.forEach(k=>delete S.brands[k]);
+
+  // Add a pending stub under the clean brand name so Corrections page shows it
+  S.brands[brand]={displayName:brand,filename:'',isDup:false,rows:[],
+                   _pendingCorrection:true,brandSummary:{},rowCount:0};
   // Re-run checks to reflect removal
   runChecks();
   renderCheckUI();renderKPIs();renderReport();
@@ -1299,6 +1301,15 @@ async function runCorrections(){
   );
 
   // Parse each uploaded file
+  // IMPORTANT: temporarily remove pending stubs so parseFile doesn't create __dup__ keys
+  const pendingStubs = {};
+  Object.keys(S.brands).forEach(k=>{
+    if(S.brands[k]._pendingCorrection){
+      pendingStubs[k] = S.brands[k];
+      delete S.brands[k];
+    }
+  });
+
   let processed = 0;
   for(const file of _correctionPendingFiles){
     try{
@@ -1308,6 +1319,8 @@ async function runCorrections(){
   }
 
   if(processed === 0){
+    // Restore stubs if nothing parsed
+    Object.assign(S.brands, pendingStubs);
     alert('No files could be processed. Check the file format.');
     if(btn){btn.disabled=false;btn.textContent='↺ Re-consolidate';}
     return;

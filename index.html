@@ -1968,7 +1968,7 @@ function renderConfirmPanel(){
     const brandKey=nameToKey[nm]||nm;
     const uploaded=uploadedNames.has(nm);
     const hasFail=failedBrands.has(brandKey);
-    const rows=uploaded?(S.brands[brandKey]?.rows||[]).filter(r=>r.month===CONSOLIDATION_MONTH).length:0;
+    const rows=uploaded?S.consolidated.filter(r=>r.brand===brandKey||r.brand.replace(/__dup__\w+$/,'')===nm).length:0;
 
     let status,statusColor,borderColor,bg,checked,disabled=false;
     if(!uploaded){
@@ -2029,32 +2029,23 @@ function finaliseConsolidation(){
   checkboxes.forEach(cb=>{if(cb.checked)selectedBrands.add(cb.getAttribute('data-brand'));});
   if(!selectedBrands.size){alert('Please select at least one brand to consolidate.');return;}
 
-  // Save IC fixes (manual cfLine overrides) before wiping
-  const icFixes={};
-  S.consolidated.forEach(r=>{ if(r._uid) icFixes[r._uid]=r.cfLine; });
-
-  S.consolidated=[];
-  Object.values(S.brands).forEach(d=>{
-    d.rows.forEach(r=>{
-      if(!selectedBrands.has(r.brand))return;
-      const cf=S.mapping[r.brand]?.[r.grouping];
-      if(!cf||cf==='__structural__'||cf==='__ignore__')return;
-      if(r.month!==CONSOLIDATION_MONTH)return;
-      S.consolidated.push({...r,brand:r.brand.replace(/__dup__\w+$/,''),cfLine:cf,activity:ACT_OF[cf]||''});
-    });
+  // Filter S.consolidated to only selected brands.
+  // Do NOT rebuild from d.rows — on session restore, d.rows is empty for all non-fresh brands.
+  // S.consolidated is the single source of truth for all consolidated transaction data.
+  S.consolidated=S.consolidated.filter(r=>{
+    const base=r.brand.replace(/__dup__\w+$/,'');
+    return selectedBrands.has(base)||selectedBrands.has(r.brand);
   });
-
-  // Re-apply IC fixes
-  if(Object.keys(icFixes).length){
-    S.consolidated.forEach(r=>{ if(r._uid && icFixes[r._uid]) r.cfLine=icFixes[r._uid]; });
-  }
 
   S.months=[...new Set(S.consolidated.map(r=>r.month))].sort(sortM);
   S.brandList=[...new Set(S.consolidated.map(r=>r.brand.replace(/__dup__\w+$/,'')))].sort();
-  S.excludedBrands=Object.keys(S.brands).filter(b=>!selectedBrands.has(b)&&!S.brands[b].isDup);
+  S.excludedBrands=Object.keys(S.brands).filter(b=>{
+    const base=(S.brands[b]?.displayName||b).replace(/__dup__\w+$/,'');
+    return !selectedBrands.has(b)&&!selectedBrands.has(base)&&!S.brands[b]?.isDup;
+  });
   populateFilters();runChecks();
   saveSession();
-  markStep(3,'done');markStep(4,'active');showPage('checks');
+  markStep(5,'done');markStep(6,'active');showPage('closemonth');
 }
 
 function buildRecon(){
@@ -2800,6 +2791,95 @@ function renderBrands(){
   tbody.innerHTML=trs.join('');
 }
 
+function renderCloseMonth(){
+  const el=document.getElementById('page-closemonth');
+  if(!el) return;
+
+  const ALL_BRANDS=HIST.brands||[];
+  const failedBrands=new Set();
+  Object.entries(S.recon).forEach(([brand,months])=>{
+    Object.values(months).forEach(r=>{if(r.hasSummary&&!r.pass)failedBrands.add(brand);});
+  });
+  const uploadedNames=new Set(Object.values(S.brands).filter(d=>!d.isDup).map(d=>d.displayName||''));
+  const nameToKey={};
+  Object.entries(S.brands).forEach(([k,d])=>{if(!d.isDup)nameToKey[d.displayName||k]=k;});
+
+  const totalRows=S.consolidated.length;
+  const brandCount=S.brandList.length;
+  const notUploaded=ALL_BRANDS.filter(nm=>!uploadedNames.has(nm)).length;
+  const failCount=ALL_BRANDS.filter(nm=>{const k=nameToKey[nm]||nm;return uploadedNames.has(nm)&&failedBrands.has(k);}).length;
+  const passCount=brandCount-failCount;
+
+  // Brand-wise 3-tier gap table
+  const gapRows=ALL_BRANDS.map(nm=>{
+    const k=nameToKey[nm]||nm;
+    const uploaded=uploadedNames.has(nm);
+    const hasFail=failedBrands.has(k);
+    const consRows=S.consolidated.filter(r=>r.brand===nm||r.brand===k).length;
+    const bs=(S.brands[k]?.brandSummary||{})[CONSOLIDATION_MONTH]||{};
+    const bNet=pN(bs['Net Increase (Decrease) in cash']);
+    const myRows=S.consolidated.filter(r=>(r.brand===nm||r.brand===k)&&r.month===CONSOLIDATION_MONTH);
+    const dNet=myRows.reduce((a,r)=>a+r.net,0);
+    const delta=Math.abs(dNet-bNet);
+    const hasSum=Object.keys(bs).length>0;
+    let statusTxt,statusCol;
+    if(!uploaded){statusTxt='Not uploaded';statusCol='var(--red)';}
+    else if(hasFail){statusTxt='⚠ Recon gap: '+(delta<1000?fmtN(delta):fmtCr(delta));statusCol='var(--amber)';}
+    else if(hasSum){statusTxt='✓ Recon passed';statusCol='var(--green)';}
+    else{statusTxt='No summary';statusCol='var(--muted)';}
+    return `<tr style="border-bottom:1px solid var(--rule)">
+      <td style="padding:7px 14px;font-size:12px;font-weight:500">${nm}</td>
+      <td style="padding:7px 14px;font-size:11px;color:${statusCol};font-weight:600">${statusTxt}</td>
+      <td style="padding:7px 14px;font-size:11px;text-align:right;font-family:'Courier New',monospace">${uploaded&&consRows>0?fmtN(dNet):'—'}</td>
+      <td style="padding:7px 14px;font-size:11px;text-align:right;font-family:'Courier New',monospace">${hasSum?fmtN(bNet):'—'}</td>
+    </tr>`;
+  }).join('');
+
+  const confirmed=S.reportConfirmed;
+  el.innerHTML=`
+  <div class="panel">
+    <div class="ph">
+      <div class="pt">Step 6 — Close Month: ${CONSOLIDATION_MONTH}</div>
+    </div>
+    <div class="pb">
+      <div style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap">
+        <div class="ci ${passCount>0?'pass':'fail'}"><div class="ci-label">Ready to Bake</div><div class="ci-val">${passCount}</div><div class="ci-desc">brands × consolidated</div></div>
+        <div class="ci ${failCount>0?'warn':'pass'}"><div class="ci-label">Recon Issues</div><div class="ci-val">${failCount}</div><div class="ci-desc">excluded from bake</div></div>
+        <div class="ci ${notUploaded>0?'fail':'pass'}"><div class="ci-label">Not Uploaded</div><div class="ci-val">${notUploaded}</div><div class="ci-desc">will be skipped</div></div>
+        <div class="ci pass"><div class="ci-label">Total Rows</div><div class="ci-val">${totalRows.toLocaleString()}</div><div class="ci-desc">in S.consolidated</div></div>
+      </div>
+
+      ${!confirmed?`<div class="alert aw"><span>⚠</span><div>Report has not been confirmed yet. Go to <strong>Report</strong> tab and click <strong>Confirm Report</strong> before baking in.</div></div>`:''}
+
+      <div style="margin-bottom:20px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px">Brand Summary</div>
+        <table style="width:100%;border-collapse:collapse;border:1px solid var(--rule);border-radius:6px;overflow:hidden">
+          <thead><tr style="background:#f8f7f4;border-bottom:2px solid var(--rule)">
+            <th style="padding:8px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);text-align:left">Brand</th>
+            <th style="padding:8px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);text-align:left">Status</th>
+            <th style="padding:8px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);text-align:right">Data Net (₹)</th>
+            <th style="padding:8px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);text-align:right">Summary Net (₹)</th>
+          </tr></thead>
+          <tbody>${gapRows}</tbody>
+        </table>
+      </div>
+
+      <div style="display:flex;gap:12px;align-items:center;padding:16px;background:#f8f7f4;border-radius:8px;border:1.5px solid var(--rule)">
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:700">Bake In ${CONSOLIDATION_MONTH}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:3px">
+            Adds ${totalRows} rows to HIST · advances month to next · clears session · pushes to GitHub dev branch
+          </div>
+        </div>
+        <button class="btn btn-p" onclick="requireAuth(()=>bakeInMonth())"
+          ${!confirmed?'style="opacity:0.5;cursor:not-allowed" title="Confirm report first"':''}>
+          🔒 Bake In & Close Month
+        </button>
+      </div>
+    </div>
+  </div>`;
+}
+
 async function bakeInMonth(){
   if(!S.consolidated.length){alert('No consolidated data to bake in.');return;}
   const month = CONSOLIDATION_MONTH;
@@ -2851,41 +2931,60 @@ async function bakeInMonth(){
     "const CONSOLIDATION_MONTH = '"+nextMonth+"'"
   );
 
-  // Push to GitHub (dev/index.html on main branch = EC2)
+  // Push to GitHub dev branch index.html using blob API (supports large files)
   setSyncBadge('⟳ Pushing to GitHub...', '#555');
   try{
-    const api   = `https://api.github.com/repos/${GH_SYNC.repo}/contents/dev/index.html`;
-    const hdrs  = {'Authorization':`Bearer ${GH_SYNC.token}`,'Accept':'application/vnd.github+json','Content-Type':'application/json'};
-    // Get current SHA
-    const getR  = await fetch(`${api}?ref=main`, {headers:hdrs});
-    const getMeta = await getR.json();
-    const sha   = getMeta.sha;
-    // Encode content
-    const b64   = btoa(unescape(encodeURIComponent(src)));
-    const putR  = await fetch(api, {method:'PUT', headers:hdrs, body:JSON.stringify({
-      message: `Bake in ${month} → advance to ${nextMonth}`,
-      content: b64,
-      sha,
-      branch: 'main'
-    })});
-    if(!putR.ok){
-      const err = await putR.json();
-      throw new Error(err.message||'Push failed');
-    }
+    const hdrs = {'Authorization':`Bearer ${GH_SYNC.token}`,'Accept':'application/vnd.github+json','Content-Type':'application/json'};
+    const base = `https://api.github.com/repos/${GH_SYNC.repo}`;
+    const b64  = btoa(unescape(encodeURIComponent(src)));
+
+    // Step 1: Create blob
+    const blobR = await fetch(`${base}/git/blobs`,{method:'POST',headers:hdrs,
+      body:JSON.stringify({content:b64,encoding:'base64'})});
+    if(!blobR.ok) throw new Error('Blob create failed: '+blobR.status);
+    const {sha:blobSha} = await blobR.json();
+
+    // Step 2: Get current HEAD ref on dev
+    const refR = await fetch(`${base}/git/ref/heads/${GH_SYNC.branch}`,{headers:hdrs});
+    if(!refR.ok) throw new Error('Ref fetch failed: '+refR.status);
+    const refSha = (await refR.json()).object.sha;
+
+    // Step 3: Get current commit tree
+    const commitR = await fetch(`${base}/git/commits/${refSha}`,{headers:hdrs});
+    const treeSha = (await commitR.json()).tree.sha;
+
+    // Step 4: Create new tree with updated index.html
+    const newTreeR = await fetch(`${base}/git/trees`,{method:'POST',headers:hdrs,
+      body:JSON.stringify({base_tree:treeSha,
+        tree:[{path:'index.html',mode:'100644',type:'blob',sha:blobSha}]})});
+    if(!newTreeR.ok) throw new Error('Tree create failed: '+newTreeR.status);
+    const newTreeSha = (await newTreeR.json()).sha;
+
+    // Step 5: Create commit
+    const newCommitR = await fetch(`${base}/git/commits`,{method:'POST',headers:hdrs,
+      body:JSON.stringify({message:`Bake in ${month} → advance to ${nextMonth}`,
+        tree:newTreeSha,parents:[refSha]})});
+    if(!newCommitR.ok) throw new Error('Commit create failed: '+newCommitR.status);
+    const newCommitSha = (await newCommitR.json()).sha;
+
+    // Step 6: Update dev branch ref
+    const patchR = await fetch(`${base}/git/refs/heads/${GH_SYNC.branch}`,{method:'PATCH',headers:hdrs,
+      body:JSON.stringify({sha:newCommitSha,force:false})});
+    if(!patchR.ok) throw new Error('Ref update failed: '+patchR.status);
+
     setSyncBadge('✓ Baked & pushed', '#2e7d32');
-    // Clear session
     clearSession();
-    alert('✓ '+month+' baked in successfully!\n\nNext month is set to '+nextMonth+'.\n\nEC2 will auto-pull the updated dashboard in ~30 seconds.');
+    alert('✓ '+month+' baked in successfully!\n\nNext month is set to '+nextMonth+'.\n\nEC2 will auto-pull the updated dashboard in ~30 seconds via webhook.');
   }catch(e){
     setSyncBadge('⚠ Push failed — downloading instead', '#b71c1c');
     // Fallback: download the file
-    const blob = new Blob([src], {type:'text/html'});
+    const blob2 = new Blob([src], {type:'text/html'});
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
+    a.href = URL.createObjectURL(blob2);
     a.download = 'cashflow_consolidation_dashboard.html';
     a.click();
     clearSession();
-    alert('✓ '+month+' baked.\n\nGitHub push failed ('+e.message+') — file downloaded instead.\nUpload manually to GitHub to update the live tool.');
+    alert('✓ '+month+' baked.\n\nGitHub push failed ('+e.message+') — file downloaded instead.\nUpload manually to GitHub dev branch to update the live tool.');
   }
 }
 

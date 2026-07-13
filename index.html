@@ -508,14 +508,7 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
         </div>
         <div class="pb">
           <div class="alert ai"><span>ℹ️</span><div>Upload each brand's <strong>Jun-26</strong> cash file. The tool reads the <strong>"3 tier CF - Direct method"</strong> sheet for reconciliation, and the <strong>Data</strong> sheet for transaction detail.<br>The consolidated report will combine your pre-loaded FY22–May26 history with the new Jun-26 data.</div></div>
-          <div class="upload-grid" id="upload-grid">
-            <label class="uc" style="cursor:pointer;display:block;">
-              <input type="file" multiple accept=".xlsx,.xls,.xlsb" style="display:none" onchange="handleUpload(event)">
-              <div style="font-size:24px;margin-bottom:6px;">📂</div>
-              <div style="font-size:13px;font-weight:600;margin-bottom:2px;">Drop / Click to Add</div>
-              <div style="font-size:11px;color:var(--muted);">One file per brand · Jun-26</div>
-            </label>
-          </div>
+          <div class="upload-grid" id="upload-grid"></div>
         </div>
       </div>
 
@@ -594,11 +587,7 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
             <div class="alert aw" style="margin-bottom:12px;"><span>ℹ️</span><div>If IC loans don't net to zero, a grouping may be mapped to the wrong CF line. Find the transaction below and remap it. The IC check will update immediately.</div></div>
             <div id="ic-remap-body"></div>
           </div>
-          <div style="display:flex;gap:10px;margin-top:10px;align-items:center;">
-  <button class="btn btn-sm btn-o" onclick="toggleICRemap()">🔧 Fix IC Loan Mismatch</button>
-  <button class="btn btn-sm btn-p" onclick="saveICChangesNow()" id="btn-save-ic">💾 Save IC Changes</button>
-  <span id="ic-save-badge" style="font-size:11px;color:var(--muted)"></span>
-</div>
+          <button class="btn btn-sm btn-o" style="margin-top:10px;" onclick="toggleICRemap()">🔧 Fix IC Loan Mismatch</button>
         </div>
       </div>
       <div class="panel">
@@ -882,6 +871,9 @@ const FY_RANGES={
   FY27:{from:202604,to:202703},
 };
 
+function month2key(m){if(!m)return 0;const p=String(m).split('-');return parseInt(p[1]||0)*100+parseInt(p[0]||0);}
+function monthInFY(m,fy){if(fy==='ALL')return true;if(fy===CONSOLIDATION_MONTH)return m===CONSOLIDATION_MONTH;const r=FY_RANGES[fy];if(!r)return true;const k=month2key(m);return k>=r.from&&k<=r.to;}
+
 const TARGET=21;
 
 // ═══════════════════════════════════════════════════════════
@@ -899,6 +891,36 @@ let currentBrand='ALL';
 // COMBINED DATA GETTER
 // Merges historical (HIST) + new consolidated rows
 // ═══════════════════════════════════════════════════════════
+function getAllRows(brandFilter,fyFilter){
+  const rows=[];
+  // Historical rows (up to May-26)
+  const histBrands=brandFilter==='ALL'?Object.keys(HIST.data):[brandFilter].filter(b=>HIST.data[b]);
+  histBrands.forEach(brand=>{
+    Object.entries(HIST.data[brand]).forEach(([month,lines])=>{
+      if(!monthInFY(month,fyFilter)) return;
+      Object.entries(lines).forEach(([cfLine,d])=>{
+        if(d.net!==0||d.inflow!==0||d.outflow!==0)
+          rows.push({brand,month,cfLine,activity:ACT_OF[cfLine]||'',inflow:d.inflow,outflow:d.outflow,net:d.net,source:'hist'});
+      });
+    });
+  });
+  // New uploaded rows (Jun-26+)
+  S.consolidated.forEach(r=>{
+    if((brandFilter==='ALL'||r.brand===brandFilter)&&monthInFY(r.month,fyFilter))
+      rows.push({...r,source:'new'});
+  });
+  return rows;
+}
+
+function getAllBrands(){
+  return [...new Set([...Object.keys(HIST.data),...S.brandList])].sort();
+}
+function getAllMonths(){
+  const histMonths=new Set();
+  Object.values(HIST.data).forEach(b=>Object.keys(b).forEach(m=>histMonths.add(m)));
+  const newMonths=new Set(S.consolidated.map(r=>r.month));
+  return [...new Set([...histMonths,...newMonths])].sort(sortM);
+}
 
 // ═══════════════════════════════════════════════════════════
 // UPLOAD
@@ -942,7 +964,7 @@ function saveSession(){
       }]))
     };
     // GitHub is the single source of truth
-    pushSessionToGitHub(snapshot); // fire-and-forget intentional for sync callers
+    pushSessionToGitHub(snapshot);
     console.log('Session saved for', CONSOLIDATION_MONTH);
   }catch(e){console.warn('Session save failed:',e);}
 }
@@ -1022,69 +1044,6 @@ async function removeFromConsolidation(brand){
 
 
 
-
-async function pushMappingAndSession(){
-  // Single GitHub commit containing BOTH mapping.json and session.json
-  // Prevents race condition when both are pushed separately
-  try{
-    runChecks();
-    const IC_LINES=['Debt Investment - Internal','Debt Repayments - Internal',
-      'Debt Repayment Receipts - Internal','Loan - Internal'];
-    const icRows={};
-    Object.entries(S.brands).forEach(([k,d])=>{
-      if(!d.rows) return;
-      const subset=d.rows.filter(r=>r.month===CONSOLIDATION_MONTH&&IC_LINES.includes(S.mapping[k]?.[r.grouping]));
-      if(subset.length) icRows[k]=subset;
-    });
-    const snapshot={
-      month:CONSOLIDATION_MONTH,savedAt:new Date().toISOString(),
-      consolidated:S.consolidated,months:S.months,brandList:S.brandList,
-      recon:S.recon,checks:S.checks,issues:S.issues,excludedBrands:S.excludedBrands,
-      mapping:S.mapping,icRows,reportConfirmed:S.reportConfirmed||false,
-      icOverrides:S.icOverrides||{},
-      brandMeta:Object.fromEntries(Object.entries(S.brands).map(([k,d])=>[k,{
-        displayName:d.displayName,filename:d.filename,isDup:d.isDup,
-        rowCount:d.rows?d.rows.length:0,brandSummary:d.brandSummary||{},
-        _pendingCorrection:d._pendingCorrection||false
-      }]))
-    };
-    // Clean mapping
-    const cleanMap={};
-    Object.entries(S.mapping).forEach(([brand,lines])=>{
-      const kept={};
-      Object.entries(lines).forEach(([grp,val])=>{if(val&&val!==null)kept[grp]=val;});
-      if(Object.keys(kept).length) cleanMap[brand.replace(/__dup__\w+$/, '')]=kept;
-    });
-    const sessionBody=JSON.stringify(snapshot,null,0);
-    const mappingBody=JSON.stringify(cleanMap);
-    const hdrs={'Authorization':`Bearer ${GH_SYNC.token}`,'Accept':'application/vnd.github+json','Content-Type':'application/json'};
-    const base=`https://api.github.com/repos/${GH_SYNC.repo}`;
-    // Create both blobs
-    const [sb,mb]= await Promise.all([
-      fetch(`${base}/git/blobs`,{method:'POST',headers:hdrs,body:JSON.stringify({content:btoa(unescape(encodeURIComponent(sessionBody))),encoding:'base64'})}).then(r=>r.json()),
-      fetch(`${base}/git/blobs`,{method:'POST',headers:hdrs,body:JSON.stringify({content:btoa(unescape(encodeURIComponent(mappingBody))),encoding:'base64'})}).then(r=>r.json())
-    ]);
-    // Get current HEAD
-    const refR=await fetch(`${base}/git/ref/heads/${GH_SYNC.branch}`,{headers:hdrs});
-    const refSha=(await refR.json()).object.sha;
-    const commitR=await fetch(`${base}/git/commits/${refSha}`,{headers:hdrs});
-    const treeSha=(await commitR.json()).tree.sha;
-    // Single tree with both files
-    const newTreeR=await fetch(`${base}/git/trees`,{method:'POST',headers:hdrs,
-      body:JSON.stringify({base_tree:treeSha,tree:[
-        {path:GH_SYNC.file,mode:'100644',type:'blob',sha:sb.sha},
-        {path:GH_SYNC.mapFile,mode:'100644',type:'blob',sha:mb.sha}
-      ]})});
-    const newTreeSha=(await newTreeR.json()).sha;
-    const newCommitR=await fetch(`${base}/git/commits`,{method:'POST',headers:hdrs,
-      body:JSON.stringify({message:`Session sync: ${CONSOLIDATION_MONTH} · ${new Date().toISOString().slice(0,10)}`,tree:newTreeSha,parents:[refSha]})});
-    const newCommitSha=(await newCommitR.json()).sha;
-    await fetch(`${base}/git/refs/heads/${GH_SYNC.branch}`,{method:'PATCH',headers:hdrs,
-      body:JSON.stringify({sha:newCommitSha,force:true})});
-    setSyncBadge('✓ Saved','#2e7d32');
-    console.log('Mapping + session saved in single commit, rows:',snapshot.consolidated.length);
-  }catch(e){setSyncBadge('⚠ Save failed','#b71c1c');console.warn('pushMappingAndSession failed:',e);}
-}
 
 async function loadMappingFromGitHub(){
   try{
@@ -1308,7 +1267,6 @@ function restoreSession(snap){
       if(S.brands[k]){S.brands[k].rows = rows; icRestored.push(k+'('+rows.length+')');}
     });
 
-    applyICOverrides(); // re-apply IC fixes after restore
     // NOTE: do NOT populate S.brands[brand].rows from consolidated here.
     // S.consolidated is the single source of truth for transaction data.
     // S.brands[brand].rows is only populated when a file is freshly uploaded via parseFile.
@@ -1377,7 +1335,6 @@ async function checkForSavedSession(){
         const banner=document.getElementById('session-banner');
         if(banner) banner.style.display='none';
         setSyncBadge('☁ Session restored', '#1565c0');
-        renderGrid(); // refresh upload grid with restored brand stubs
         // Re-render corrections page if it's open
         const corrPage = document.getElementById('page-corrections');
         if(corrPage && !corrPage.classList.contains('hidden')) renderCorrections();
@@ -1427,19 +1384,21 @@ function dismissSession(){
   if(banner) banner.style.display='none';
 }
 
-async function init(){
-  renderGrid(); // render immediately so upload tile shows right away
-  await loadMappingFromGitHub();  // load saved mappings FIRST before session restore
-  await checkForSavedSession();   // then restore session (which uses loaded mappings)
-  renderGrid(); // re-render in case session restore added brand stubs
+function init(){
+  checkForSavedSession();
+  loadMappingFromGitHub();  // pre-load saved mappings before any upload
+  renderGrid();
 }
 
 function renderGrid(){
   const g=document.getElementById('upload-grid');
   if(!g) return;
-  // Static drop zone tile is in HTML — only render brand cards here
-  const staticTile=g.querySelector('label.uc');
-  let h='';
+  let h=`<div class="uc">
+    <input type="file" multiple accept=".xlsx,.xls,.xlsb" onchange="handleUpload(event)">
+    <div style="font-size:24px;margin-bottom:6px;">📂</div>
+    <div style="font-size:13px;font-weight:600;margin-bottom:2px;">Drop / Click to Add</div>
+    <div style="font-size:11px;color:var(--muted);">One file per brand · Jun-26</div>
+  </div>`;
   Object.entries(S.brands).forEach(([key,d])=>{
     // Only show brands actually uploaded this session (fresh flag set by parseFile)
     if(!d.fresh) return;
@@ -1476,15 +1435,64 @@ function renderGrid(){
       </div>
     </div>`;
   });
-  // Preserve the static drop zone tile, append brand cards after it
-  if(staticTile){
-    // Remove old brand cards (not the static tile)
-    [...g.children].forEach(c=>{ if(c!==staticTile) c.remove(); });
-    g.insertAdjacentHTML('beforeend', h);
-  } else {
-    g.innerHTML=h;
-  }
+  g.innerHTML=h;
   updateBadges();
+}
+
+function removeBrand(n){
+  const removedDisplay=S.brands[n]?.displayName||n.split('__dup__')[0];
+  if(!confirm(`Remove ${removedDisplay} from this consolidation?\n\nThis will:\n• Remove all their Jun-26 transactions from the report\n• Keep their mapping for future uploads\n• Allow you to re-upload a corrected file\n\nIC Loan fixes already done will be preserved.`)) return;
+
+  // Purge all consolidated rows for this brand (including any __dup__ variants)
+  const beforeCount=S.consolidated.length;
+  S.consolidated=S.consolidated.filter(r=>{
+    const baseBrand=r.brand.replace(/__dup__\w+$/,'');
+    return baseBrand!==removedDisplay && r.brand!==n;
+  });
+  console.log(`Removed ${beforeCount-S.consolidated.length} consolidated rows for ${removedDisplay}`);
+
+  // Remove from S.brands (keep mapping)
+  delete S.brands[n];
+  // Also remove any __dup__ variants of same brand
+  Object.keys(S.brands).forEach(key=>{
+    if((S.brands[key]?.displayName||key.split('__dup__')[0])===removedDisplay){
+      delete S.brands[key];
+    }
+  });
+
+  // Promote orphaned dup to real name if original is now gone
+  Object.keys(S.brands).forEach(key=>{
+    if(key.includes('__dup__')&&S.brands[key].displayName===removedDisplay){
+      const d=S.brands[key];const m=S.mapping[key];
+      d.isDup=false;
+      S.brands[removedDisplay]=d;S.mapping[removedDisplay]=m;
+      delete S.brands[key];delete S.mapping[key];
+    }
+  });
+
+  // Re-run consolidation to reflect the removal
+  if(S.consolidated.length>0 || Object.keys(S.brands).length>0){
+    buildRecon();
+    renderCheckUI();renderKPIs();renderReport();renderWaterfall();renderBrands();
+    renderRecon();
+  }
+
+  renderGrid();
+  document.getElementById('btn-map').disabled=!Object.values(S.brands).some(d=>d.fresh);
+  saveSession();
+}
+
+async function handleUpload(e){
+  const files=Array.from(e.target.files);if(!files.length)return;
+  document.getElementById('log-panel').style.display='';
+  for(const f of files)await parseFile(f);
+  renderGrid();document.getElementById('btn-map').disabled=!Object.values(S.brands).some(d=>d.fresh);
+  e.target.value='';
+}
+
+function plog(msg,type='info'){
+  const el=document.getElementById('log-body');
+  el.innerHTML+=`<div class="iss ${type}">${msg}</div>`;el.scrollTop=el.scrollHeight;
 }
 
 
@@ -1963,8 +1971,7 @@ async function consolidate(){
 
 
   populateFilters();runChecks();
-  applyICOverrides(); // re-apply any saved IC line overrides
-  await pushMappingAndSession(); // single commit: mappings + session together
+  await pushMappingToGitHub(); // persist mappings for future uploads
   markStep(2,'done');markStep(3,'active');showPage('recon');renderRecon();
 }
 
@@ -2071,7 +2078,6 @@ function finaliseConsolidation(){
     const base=(S.brands[b]?.displayName||b).replace(/__dup__\w+$/,'');
     return !selectedBrands.has(b)&&!selectedBrands.has(base)&&!S.brands[b]?.isDup;
   });
-  applyICOverrides(); // re-apply saved IC fixes after brand filter
   populateFilters();runChecks();
   saveSession();
   markStep(5,'done');markStep(6,'active');showPage('closemonth');
@@ -2286,21 +2292,6 @@ function renderICRemap(){
 }
 
 
-async function saveICChangesNow(){
-  const btn=document.getElementById('btn-save-ic');
-  const badge=document.getElementById('ic-save-badge');
-  if(btn) btn.disabled=true;
-  if(badge) badge.textContent='⟳ Saving...';
-  try{
-    await saveSessionAsync();
-    if(badge) badge.textContent='✓ Saved '+new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
-  }catch(e){
-    if(badge) badge.textContent='⚠ Save failed';
-  } finally {
-    if(btn) btn.disabled=false;
-  }
-}
-
 function applyICOverrides(){
   if(!S.icOverrides||!Object.keys(S.icOverrides).length) return;
   S.consolidated.forEach(r=>{
@@ -2312,12 +2303,12 @@ function applyICOverrides(){
   });
 }
 
-async function remapICRow(sel){
+function remapICRow(sel){
   const ci=parseInt(sel.getAttribute('data-ci'));
   const newLine=sel.value;
   if(!newLine||newLine===''||isNaN(ci))return;
 
-  // Update the row directly in S.consolidated
+  // Update the row directly
   if(ci>=0&&ci<S.consolidated.length){
     S.consolidated[ci].cfLine=newLine;
     S.consolidated[ci].activity=ACT_OF[newLine]||'';
@@ -2325,27 +2316,10 @@ async function remapICRow(sel){
     const r=S.consolidated[ci];
     if(!S.icOverrides) S.icOverrides={};
     S.icOverrides[r.brand+'||'+r.grouping]=newLine;
-
-    // FIX: sync change back into S.brands[brandKey].rows so icRows capture
-    // in saveSession reflects the remapped cfLine, not the stale mapping value.
-    const brandKey=Object.keys(S.brands).find(k=>{
-      const d=S.brands[k];
-      return (d.displayName||k)===r.brand||k===r.brand;
-    });
-    if(brandKey&&S.brands[brandKey]&&S.brands[brandKey].rows){
-      S.brands[brandKey].rows.forEach(row=>{
-        if(row.grouping===r.grouping&&row.month===CONSOLIDATION_MONTH){
-          row.cfLine=newLine;
-          row.activity=ACT_OF[newLine]||'';
-        }
-      });
-    }
   }
 
   runChecks();
-  // FIX: await the save so GitHub push completes before user can navigate away
-  setSyncBadge('⟳ Saving IC remap…','#a0b4c8');
-  await saveSessionAsync();
+  saveSession();
   renderICRemap();
 }
 
@@ -3374,7 +3348,6 @@ function showPage(page){
     corrections:'Corrections & Re-upload',closemonth:'Close Month — '+CONSOLIDATION_MONTH,
     report:'Consolidated Cash Flow Report',waterfall:'Cash Waterfall',brands:'Brand Breakdown'};
   document.getElementById('page-title').textContent=titles[page]||page;
-  if(page==='upload')renderGrid();
   if(page==='report'){populateFilters();renderReport();const b=document.getElementById('btn-confirm-report');if(b&&S.reportConfirmed){b.textContent='✓ Report Confirmed';b.style.background='#2e7d32';b.disabled=true;}}
   if(page==='waterfall')renderWaterfall();
   if(page==='brands')renderBrands();
@@ -3399,8 +3372,7 @@ function updateBadges(){
 }
 
 function resetNewOnly(){
-  const savedOverrides=S.icOverrides||{};
-  S={brands:{},mapping:{},consolidated:[],months:[],brandList:[],checks:{},issues:[],recon:{},excludedBrands:[],icOverrides:savedOverrides,reportConfirmed:false};
+  S={brands:{},mapping:{},consolidated:[],months:[],brandList:[],checks:{},issues:[],recon:{},excludedBrands:[]};
   document.getElementById('log-body').innerHTML='';document.getElementById('log-panel').style.display='none';
   [1,2,3,4,5].forEach(i=>markStep(i,''));markStep(1,'active');
   renderGrid();showPage('upload');

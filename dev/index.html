@@ -1255,12 +1255,9 @@ function restoreSession(snap){
     Object.entries(snap.icRows||{}).forEach(([k,rows])=>{
       if(S.brands[k]) S.brands[k].rows = rows;
     });
-    // Populate brand.rows from consolidated
-    (snap.consolidated||[]).forEach(r=>{
-      const d=S.brands[r.brand];
-      if(!d) return;
-      if(!d.rows.find(x=>x._uid===r._uid)) d.rows.push(r);
-    });
+    // NOTE: do NOT populate S.brands[brand].rows from consolidated here.
+    // S.consolidated is the single source of truth for transaction data.
+    // S.brands[brand].rows is only populated when a file is freshly uploaded via parseFile.
     return snap;
   }catch(e){console.warn('Session restore failed:',e);return false;}
 }
@@ -1897,8 +1894,8 @@ function consolidate(){
     }
   });
 
-  // Identify brands being (re-)consolidated now = those with actual rows uploaded
-  const brandsWithRows=new Set(Object.entries(S.brands).filter(([k,d])=>d.rows&&d.rows.length>0).map(([k])=>k));
+  // Only consolidate brands uploaded THIS session (fresh:true), not session-restore stubs
+  const brandsWithRows=new Set(Object.entries(S.brands).filter(([k,d])=>d.fresh&&d.rows&&d.rows.length>0).map(([k])=>k));
   const baseBrandsWithRows=new Set([...brandsWithRows].map(k=>k.replace(/__dup__\w+$/,'')));
 
   // Remove existing consolidated rows for brands being re-uploaded (replace, not stack)

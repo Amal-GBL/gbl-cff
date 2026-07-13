@@ -2293,12 +2293,12 @@ function applyICOverrides(){
   });
 }
 
-function remapICRow(sel){
+async function remapICRow(sel){
   const ci=parseInt(sel.getAttribute('data-ci'));
   const newLine=sel.value;
   if(!newLine||newLine===''||isNaN(ci))return;
 
-  // Update the row directly
+  // Update the row directly in S.consolidated
   if(ci>=0&&ci<S.consolidated.length){
     S.consolidated[ci].cfLine=newLine;
     S.consolidated[ci].activity=ACT_OF[newLine]||'';
@@ -2306,10 +2306,27 @@ function remapICRow(sel){
     const r=S.consolidated[ci];
     if(!S.icOverrides) S.icOverrides={};
     S.icOverrides[r.brand+'||'+r.grouping]=newLine;
+
+    // FIX: sync change back into S.brands[brandKey].rows so icRows capture
+    // in saveSession reflects the remapped cfLine, not the stale mapping value.
+    const brandKey=Object.keys(S.brands).find(k=>{
+      const d=S.brands[k];
+      return (d.displayName||k)===r.brand||k===r.brand;
+    });
+    if(brandKey&&S.brands[brandKey]&&S.brands[brandKey].rows){
+      S.brands[brandKey].rows.forEach(row=>{
+        if(row.grouping===r.grouping&&row.month===CONSOLIDATION_MONTH){
+          row.cfLine=newLine;
+          row.activity=ACT_OF[newLine]||'';
+        }
+      });
+    }
   }
 
   runChecks();
-  saveSession();
+  // FIX: await the save so GitHub push completes before user can navigate away
+  setSyncBadge('⟳ Saving IC remap…','#a0b4c8');
+  await saveSessionAsync();
   renderICRemap();
 }
 

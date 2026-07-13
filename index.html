@@ -922,6 +922,7 @@ const SESSION_KEY = 'gbl_cf_session_' + CONSOLIDATION_MONTH;
 
 function saveSession(){
   try{
+    runChecks(); // Ensure S.checks is current before saving
     const IC_LINES=['Debt Investment - Internal','Debt Repayments - Internal',
       'Debt Repayment Receipts - Internal','Loan - Internal'];
     const icRows={};
@@ -1487,6 +1488,8 @@ async function pushMappingToGitHub(){
 // ── GitHub Session Sync ───────────────────────────────────────────────────────
 async function saveSessionAsync(){
   try{
+    // Recompute checks from current S.consolidated before saving
+    runChecks();
     const IC_LINES=['Debt Investment - Internal','Debt Repayments - Internal',
       'Debt Repayment Receipts - Internal','Loan - Internal'];
     const icRows={};
@@ -1701,6 +1704,7 @@ async function checkForSavedSession(){
       const restored = restoreSession(snap);
       if(restored){
         populateFilters();
+        runChecks(); // Recompute from actual S.consolidated — don't use stale S.checks from snap
         renderCheckUI();renderKPIs();renderReport();renderWaterfall();renderBrands();
         renderRecon();renderConfirmPanel();
         [1,2,3,4].forEach(s=>markStep(s,'done'));

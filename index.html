@@ -2624,9 +2624,10 @@ function renderReport(){
     });
   });
 
-  // Brands in scope
+  // Brands in scope — include ALL brands from HIST even if no current month data
+  // so closing balances carry forward for brands with no transactions this month
   const allBrands = selBrand==='ALL'
-    ? [...new Set([...Object.keys(dataLookup)])]
+    ? [...new Set([...Object.keys(HIST.data||{}),...Object.keys(dataLookup)])]
     : [selBrand];
 
   // All months available

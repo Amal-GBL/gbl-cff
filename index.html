@@ -509,11 +509,12 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
         <div class="pb">
           <div class="alert ai"><span>ℹ️</span><div>Upload each brand's <strong>Jun-26</strong> cash file. The tool reads the <strong>"3 tier CF - Direct method"</strong> sheet for reconciliation, and the <strong>Data</strong> sheet for transaction detail.<br>The consolidated report will combine your pre-loaded FY22–May26 history with the new Jun-26 data.</div></div>
           <div class="upload-grid" id="upload-grid">
-            <div class="uc" onclick="document.getElementById('finput').click()" style="cursor:pointer">
+            <label class="uc" style="cursor:pointer;display:block;">
+              <input type="file" multiple accept=".xlsx,.xls,.xlsb" style="display:none" onchange="handleUpload(event)">
               <div style="font-size:24px;margin-bottom:6px;">📂</div>
               <div style="font-size:13px;font-weight:600;margin-bottom:2px;">Drop / Click to Add</div>
               <div style="font-size:11px;color:var(--muted);">One file per brand · Jun-26</div>
-            </div>
+            </label>
           </div>
         </div>
       </div>
@@ -1466,7 +1467,7 @@ function renderGrid(){
   const g=document.getElementById('upload-grid');
   if(!g) return;
   // Static drop zone tile is in HTML — only render brand cards here
-  const staticTile=g.querySelector('.uc:first-child');
+  const staticTile=g.querySelector('label.uc');
   let h='';
   Object.entries(S.brands).forEach(([key,d])=>{
     // Only show brands actually uploaded this session (fresh flag set by parseFile)

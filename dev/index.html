@@ -1556,7 +1556,7 @@ async function pushSessionToGitHub(snapshot){
   }
 }
 
-async async function fetchSessionFromGitHub(){
+async function fetchSessionFromGitHub(){
   try{
     // Always fetch from GitHub blob API — avoids EC2 serving stale cached session.json
     const hdrs = {

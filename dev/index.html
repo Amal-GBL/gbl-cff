@@ -1391,6 +1391,8 @@ function renderGrid(){
     <div style="font-size:11px;color:var(--muted);">One file per brand · Jun-26</div>
   </div>`;
   Object.entries(S.brands).forEach(([key,d])=>{
+    // Only show brands actually uploaded this session (not session-restore stubs)
+    if(!d.filename && (!d.rows||d.rows.length===0) && !d.isDup) return;
     const m=S.mapping[key]||{};
     const u=Object.values(m).filter(v=>v===null).length;
     const isDup=d.isDup;

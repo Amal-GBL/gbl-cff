@@ -1748,43 +1748,7 @@ async function parseFile(file){
 // ═══════════════════════════════════════════════════════════
 // RENDER UPLOAD GRID
 // ═══════════════════════════════════════════════════════════
-function renderGrid(){
-  const g=document.getElementById('upload-grid');
-  let h=`<div class="uc"><input type="file" multiple accept=".xlsx,.xls,.xlsb" onchange="handleUpload(event)">
-    <div style="font-size:24px;margin-bottom:6px;">📂</div>
-    <div style="font-size:13px;font-weight:600;margin-bottom:2px;">Drop / Click to Add</div>
-    <div style="font-size:11px;color:var(--muted);">One file per brand</div>
-  </div>`;
-  Object.entries(S.brands).forEach(([name,d])=>{
-    const m=S.mapping[name]||{};
-    const u=Object.values(m).filter(v=>v===null).length;
-    const isDup=d.isDup;
-    const displayName=d.displayName||name;
-    const dupBorder=isDup?'border:2px solid var(--red)!important;background:var(--red-light)!important;':'';
-    const cls=isDup?'uc':u>0?'uc warn':'uc uploaded';
-    const icon=isDup?'⚠️':u>0?'⚠️':'✅';
-    const statusColor=isDup?'var(--red)':u>0?'var(--amber)':'var(--green)';
-    const statusText=isDup?'DUPLICATE — remove one':u>0?u+' unmapped':d.rows.length.toLocaleString()+' rows';
-    const latestM=d.latestMonth||'—';
-    h+=`<div class="${cls}" style="${dupBorder}">
-      <div style="font-size:20px;margin-bottom:3px;">${icon}</div>
-      <div style="font-size:11px;font-weight:800;color:var(--accent);margin-bottom:1px;">${d.filename}</div>
-      <div style="font-size:12px;font-weight:700;margin-bottom:2px;">→ ${displayName}</div>
-      <div style="font-size:11px;font-weight:600;color:${statusColor};">${statusText}</div>
-      <div style="font-size:10px;color:var(--muted);margin-top:2px;">${d.hasSummary?'✓ Summary':'No summary'} · Latest: ${latestM}</div>
-      <div style="display:flex;gap:4px;margin-top:6px;position:relative;z-index:5;">
-        <label style="flex:1;text-align:center;padding:4px 8px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;border:1.5px solid var(--accent);color:var(--accent);background:#fff;">
-          Replace
-          <input type="file" accept=".xlsx,.xls,.xlsb" style="display:none" onchange="replaceFile(event,'${name.replace(/'/g,"\'")}')" onclick="event.stopPropagation()">
-        </label>
-        <button style="flex:1;padding:4px 8px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;border:1.5px solid var(--red);color:var(--red);background:var(--red-light);"
-          onclick="event.stopPropagation();removeBrand('${name.replace(/'/g,"\'")}')">Remove</button>
-      </div>
-    </div>`;
-  });
-  g.innerHTML=h;
-  updateBadges();
-}
+
 
 async function replaceFile(event, oldBrand){
   const file = event.target.files[0];

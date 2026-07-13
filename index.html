@@ -1380,17 +1380,30 @@ async function runCorrections(){
   });
 
   // Add new rows for corrected brands only
+  let addedCount = 0;
   Object.entries(S.brands).forEach(([brandKey,d])=>{
     if(!d.rows||d.rows.length===0) return;
     const displayName = (d.displayName || brandKey).replace(/__dup__\w+$/,'');
     if(!correctionDisplayNames.has(displayName)) return;
 
+    // Debug: log what months exist in this brand's rows
+    const monthCounts = {};
+    d.rows.forEach(r=>{ monthCounts[r.month]=(monthCounts[r.month]||0)+1; });
+    console.log(`${displayName} rows by month:`, JSON.stringify(monthCounts));
+    console.log(`Looking for CONSOLIDATION_MONTH: '${CONSOLIDATION_MONTH}'`);
+
     d.rows.forEach(r=>{
-      if(r.month !== CONSOLIDATION_MONTH) return;
-      const cf = S.mapping[r.brand]?.[r.grouping] || S.mapping[brandKey]?.[r.grouping];
+      if(r.month !== CONSOLIDATION_MONTH){
+        // Log first few mismatches
+        if(addedCount === 0) console.log(`Month mismatch: '${r.month}' !== '${CONSOLIDATION_MONTH}'`);
+        return;
+      }
+      const cf = S.mapping[r.brand]?.[r.grouping] || S.mapping[brandKey]?.[r.grouping] || S.mapping[displayName]?.[r.grouping];
       if(!cf||cf==='__structural__'||cf==='__ignore__') return;
       S.consolidated.push({...r, brand:displayName, cfLine:cf, activity:ACT_OF[cf]||''});
+      addedCount++;
     });
+    console.log(`${displayName}: added ${addedCount} rows to consolidated`);
   });
 
   // Re-apply IC fixes

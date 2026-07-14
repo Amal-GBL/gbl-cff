@@ -423,7 +423,7 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
   </div>
   <div class="sb-nav">
     <div class="nav-sec">FY27 Workflow</div>
-    <div class="nav-item active" onclick="showPage('upload')" id="nav-upload"><span class="nav-icon">📥</span> Upload Jun-26+</div>
+    <div class="nav-item active" onclick="showPage('upload')" id="nav-upload"><span class="nav-icon">📥</span> Upload</div>
     <div class="nav-item" onclick="showPage('mapping')" id="nav-mapping"><span class="nav-icon">🗂</span> Map by Brand</div>
     <div class="nav-item" onclick="showPage('recon')" id="nav-recon"><span class="nav-icon">🔁</span> Recon vs Summary</div>
     <div class="nav-item" onclick="showPage('checks')" id="nav-checks"><span class="nav-icon">✅</span> Checks & IC Loans</div>
@@ -440,18 +440,18 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
   <div class="sb-foot" id="sb-foot" style="cursor:default">
     Historical: Jun-21 → May-26 ✓
     <div class="prog-wrap"><div class="prog-bar" id="prog" style="width:0%"></div></div>
-    <div style="margin-top:5px;" id="sb-upload-status">Jun-26 uploads: 0 / 21</div>
+    <div style="margin-top:5px;" id="sb-upload-status"><span id="lbl-month-b">Jun-26</span> uploads: 0 / 21</div>
     <div id="gh-sync-status" style="margin-top:6px;font-size:10px;color:#a0b4c8;"></div>
   </div>
 </div>
 
 <div class="main">
   <div class="topbar">
-    <div class="topbar-title" id="page-title">Upload Jun-26 Brand Files</div>
+    <div class="topbar-title" id="page-title">Upload <span id="lbl-month-a">Jun-26</span> Brand Files</div>
     <div class="topbar-meta">
       <span id="badge-hist" class="badge bg">FY22–May26 loaded ✓</span>
-      <span id="badge-new" class="badge ba">Jun-26: 0 / 21</span>
-      <button class="btn btn-sm btn-o" onclick="resetNewOnly()">↺ Reset Jun-26</button>
+      <span id="badge-new" class="badge ba"><span id="lbl-month-c">Jun-26</span>: 0 / 21</span>
+      <button class="btn btn-sm btn-o" onclick="resetNewOnly()">↺ Reset <span id="lbl-month-d">Jun-26</span></button>
     </div>
   </div>
 
@@ -489,7 +489,7 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
       </div>
 
       <div class="steps">
-        <div class="step active" id="step1"><div class="sdot">1</div><div class="slabel">Upload<br>Jun-26</div></div>
+        <div class="step active" id="step1"><div class="sdot">1</div><div class="slabel">Upload<br><span id="lbl-month-e">Jun-26</span></div></div>
         <div class="step" id="step2"><div class="sdot">2</div><div class="slabel">Map<br>by Brand</div></div>
         <div class="step" id="step3"><div class="sdot">3</div><div class="slabel">Recon vs<br>Summary</div></div>
         <div class="step" id="step4"><div class="sdot">4</div><div class="slabel">Checks &<br>IC Loans</div></div>
@@ -499,14 +499,14 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
 
       <div class="panel">
         <div class="ph">
-          <div class="pt">Jun-26 Brand Files <span style="font-weight:400;font-size:11px;color:var(--muted);">(21 brands expected)</span></div>
+          <div class="pt"><span id="lbl-month-f">Jun-26</span> Brand Files <span style="font-weight:400;font-size:11px;color:var(--muted);">(21 brands expected)</span></div>
           <div style="display:flex;gap:8px;">
             <input type="file" id="finput" multiple accept=".xlsx,.xls,.xlsb" style="display:none" onchange="handleUpload(event)">
             <button class="btn btn-sm btn-p" id="btn-map" onclick="startMapping()" disabled>Review Mapping →</button>
           </div>
         </div>
         <div class="pb">
-          <div class="alert ai"><span>ℹ️</span><div>Upload each brand's <strong>Jun-26</strong> cash file. The tool reads the <strong>"3 tier CF - Direct method"</strong> sheet for reconciliation, and the <strong>Data</strong> sheet for transaction detail.<br>The consolidated report will combine your pre-loaded FY22–May26 history with the new Jun-26 data.</div></div>
+          <div class="alert ai"><span>ℹ️</span><div>Upload each brand's <strong><span id="lbl-month-g">Jun-26</span></strong> cash file. The tool reads the <strong>"3 tier CF - Direct method"</strong> sheet for reconciliation, and the <strong>Data</strong> sheet for transaction detail.<br>The consolidated report will combine your pre-loaded FY22–May26 history with the new <span id="lbl-month-h">Jun-26</span> data.</div></div>
           <div class="upload-grid" id="upload-grid"></div>
         </div>
       </div>
@@ -534,7 +534,7 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
       <div id="recon-summary" class="cg" style="margin-bottom:14px;"></div>
       <div class="panel">
         <div class="ph">
-          <div class="pt">Brand Reconciliation — Jun-26</div>
+          <div class="pt">Brand Reconciliation — <span id="lbl-month-i">Jun-26</span></div>
           <div style="display:flex;gap:8px;">
             <select id="recon-brand" class="fsel" onchange="renderRecon()"></select>
           </div>
@@ -569,7 +569,7 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
     <div id="page-checks" class="hidden">
       <div class="cg" id="check-grid" style="margin-bottom:14px;"></div>
       <div class="panel">
-        <div class="ph"><div class="pt">IC Loans Check — Group Level (Jun-26)</div></div>
+        <div class="ph"><div class="pt">IC Loans Check — Group Level (<span id="lbl-month-j">Jun-26</span>)</div></div>
         <div class="pb">
           <div class="alert ai" style="margin-bottom:12px;"><span>ℹ️</span><div><strong>Rule:</strong> Across all brands, <em>Debt Investment - Internal</em> (Loan given) must net to zero against <em>Debt Repayments - Internal</em> (Loan repaid) at group level. Valid only after all 21 brands are uploaded.</div></div>
           <div class="cg" id="ic-checks" style="grid-template-columns:repeat(3,1fr);margin-bottom:12px;"></div>
@@ -613,7 +613,7 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
           <div class="fy-tab" onclick="setFY('FY25')">FY25</div>
           <div class="fy-tab" onclick="setFY('FY26')">FY26</div>
           <div class="fy-tab" onclick="setFY('FY27')">FY27</div>
-          <div class="fy-tab" id="current-month-tab" onclick="setFY(CONSOLIDATION_MONTH)">Jun-26 Only</div>
+          <div class="fy-tab" id="current-month-tab" onclick="setFY(CONSOLIDATION_MONTH)"><span id="lbl-month-k">Jun-26</span> Only</div>
         </div>
         <select id="rf-brand" class="fsel" onchange="renderReport()" style="margin-left:auto;"></select>
         <button class="btn btn-sm btn-p" onclick="confirmReport()" id="btn-confirm-report" title="Mark report as reviewed and ready to close">✓ Confirm Report</button>
@@ -709,7 +709,7 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
               <option value="ALL">All Periods</option>
               <option value="FY22">FY22</option><option value="FY23">FY23</option>
               <option value="FY24">FY24</option><option value="FY25">FY25</option>
-              <option value="FY26">FY26</option><option value="FY27" selected>FY27 (Jun-26+)</option>
+              <option value="FY26">FY26</option><option value="FY27" selected>FY27 (<span id="lbl-month-l">Jun-26</span>+)</option>
             </select>
           </div>
         </div>
@@ -727,7 +727,7 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
               <option value="ALL">All Periods</option>
               <option value="FY22">FY22</option><option value="FY23">FY23</option>
               <option value="FY24">FY24</option><option value="FY25">FY25</option>
-              <option value="FY26">FY26</option><option value="FY27" selected>FY27 (Jun-26+)</option>
+              <option value="FY26">FY26</option><option value="FY27" selected>FY27 (<span id="lbl-month-l">Jun-26</span>+)</option>
             </select>
           </div>
         </div>
@@ -880,7 +880,7 @@ function monthInFY(m,fy){if(fy==='ALL')return true;if(fy===CONSOLIDATION_MONTH)r
 const TARGET=21;
 
 // ═══════════════════════════════════════════════════════════
-// STATE — new uploads only (Jun-26+)
+// STATE — new uploads only (current month)
 // ═══════════════════════════════════════════════════════════
 let S={
   brands:{},mapping:{},consolidated:[],
@@ -896,18 +896,20 @@ let currentBrand='ALL';
 // ═══════════════════════════════════════════════════════════
 function getAllRows(brandFilter,fyFilter){
   const rows=[];
-  // Historical rows (up to May-26)
+  // Historical rows — HIST.data stores plain numbers (cfLine → net value)
   const histBrands=brandFilter==='ALL'?Object.keys(HIST.data):[brandFilter].filter(b=>HIST.data[b]);
   histBrands.forEach(brand=>{
     Object.entries(HIST.data[brand]).forEach(([month,lines])=>{
       if(!monthInFY(month,fyFilter)) return;
       Object.entries(lines).forEach(([cfLine,d])=>{
-        if(d.net!==0||d.inflow!==0||d.outflow!==0)
-          rows.push({brand,month,cfLine,activity:ACT_OF[cfLine]||'',inflow:d.inflow,outflow:d.outflow,net:d.net,source:'hist'});
+        // d is a plain number (net value), not an object
+        const net = (typeof d==='object'&&d!==null) ? (d.net||0) : (d||0);
+        if(net!==0)
+          rows.push({brand,month,cfLine,activity:ACT_OF[cfLine]||'',inflow:net>0?net:0,outflow:net<0?net:0,net,source:'hist'});
       });
     });
   });
-  // New uploaded rows (Jun-26+)
+  // Current session uploaded rows
   S.consolidated.forEach(r=>{
     if((brandFilter==='ALL'||r.brand===brandFilter)&&monthInFY(r.month,fyFilter))
       rows.push({...r,source:'new'});
@@ -984,7 +986,7 @@ function renderCorrections(){
 
   el.innerHTML=`<div class="panel">
     <div class="ph">
-      <div class="pt">Jun-26 Brand Status</div>
+      <div class="pt"><span id="lbl-month-m">Jun-26</span> Brand Status</div>
       <div style="font-size:11px;color:var(--muted);">Remove a brand below, then re-upload via Upload tab and go through Steps 2\u20134 as normal.</div>
     </div>
     <div class="pb" style="padding:0;">
@@ -1001,7 +1003,7 @@ function renderCorrections(){
 }
 
 async function removeFromConsolidation(brand){
-  if(!confirm('Remove '+brand+' from Jun-26 consolidation?\n\nAfter removing, go to Upload tab to upload the corrected file, then go through Steps 2-4.')) return;
+  if(!confirm('Remove '+brand+' from '+CONSOLIDATION_MONTH+' consolidation?\n\nAfter removing, go to Upload tab to upload the corrected file, then go through Steps 2-4.')) return;
   const before=S.consolidated.length;
   window._reconShowAll=false; // reset show-all so recon tab focuses on re-uploaded brand
   S.consolidated=S.consolidated.filter(r=>r.brand.replace(/__dup__\w+$/,'')!==brand);
@@ -1356,7 +1358,30 @@ function dismissSession(){
   if(banner) banner.style.display='none';
 }
 
+
+// ── Dynamic month label updater ─────────────────────────────
+function updateMonthLabels(){
+  const MN={1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'May',6:'Jun',
+             7:'Jul',8:'Aug',9:'Sep',10:'Oct',11:'Nov',12:'Dec'};
+  const parts=CONSOLIDATION_MONTH.split('-');
+  const lbl=MN[parseInt(parts[0])]+'-'+parts[1].slice(-2);
+  const ids=['lbl-month-a','lbl-month-b','lbl-month-c','lbl-month-d','lbl-month-e',
+             'lbl-month-f','lbl-month-g','lbl-month-h','lbl-month-i','lbl-month-j',
+             'lbl-month-k','lbl-month-l','lbl-month-m'];
+  ids.forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.textContent=lbl;
+  });
+  // Also update the current-month-tab label
+  const cmt=document.getElementById('current-month-tab');
+  if(cmt){ const sp=cmt.querySelector('span');if(sp) sp.textContent=lbl; }
+  // Update nav-upload-label if it exists
+  const navLbl=document.getElementById('nav-upload-label');
+  if(navLbl) navLbl.textContent=lbl;
+}
+
 function init(){
+  updateMonthLabels();      // set all month labels from CONSOLIDATION_MONTH
   checkForSavedSession();
   loadMappingFromGitHub();  // pre-load saved mappings before any upload
   renderGrid();
@@ -1413,7 +1438,7 @@ function renderGrid(){
 
 function removeBrand(n){
   const removedDisplay=S.brands[n]?.displayName||n.split('__dup__')[0];
-  if(!confirm(`Remove ${removedDisplay} from this consolidation?\n\nThis will:\n• Remove all their Jun-26 transactions from the report\n• Keep their mapping for future uploads\n• Allow you to re-upload a corrected file\n\nIC Loan fixes already done will be preserved.`)) return;
+  if(!confirm(`Remove ${removedDisplay} from this consolidation?\n\nThis will:\n• Remove all their '+CONSOLIDATION_MONTH+' transactions from the report\n• Keep their mapping for future uploads\n• Allow you to re-upload a corrected file\n\nIC Loan fixes already done will be preserved.`)) return;
 
   // Purge all consolidated rows for this brand (including any __dup__ variants)
   const beforeCount=S.consolidated.length;
@@ -2337,7 +2362,7 @@ function exportRecon(){
     data.push([b,m,'Net CF Financing',r.dFCF,r.bFCF,r.fcfDelta,Math.abs(r.fcfDelta)<1?'OK':'MISMATCH']);
     data.push([b,m,'Net Increase',r.dNet,r.bNet,r.netDelta,Math.abs(r.netDelta)<1?'OK':'MISMATCH']);});});
   const ws=XLSX.utils.aoa_to_sheet(data);const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,'Recon');XLSX.writeFile(wb,'GBL_Jun26_Recon.xlsx');
+  XLSX.utils.book_append_sheet(wb,ws,'Recon');XLSX.writeFile(wb,'GBL_'+CONSOLIDATION_MONTH.replace('-','')+'_Recon.xlsx');
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -3320,7 +3345,7 @@ function exportCurrentMonth(){
   ws['!cols']=[{wch:16},{wch:8},{wch:28},{wch:20},{wch:20},{wch:12},
     {wch:36},{wch:12},{wch:12},{wch:12},{wch:32},{wch:22}];
   const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,'Jun-26 Transactions');
+  XLSX.utils.book_append_sheet(wb,ws,CONSOLIDATION_MONTH+' Transactions');
   XLSX.writeFile(wb,`GBL_CashFlow_${month.replace('-','_')}_LineItems.xlsx`);
 }
 

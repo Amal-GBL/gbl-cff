@@ -3357,55 +3357,115 @@ function confirmReport(){
   setSyncBadge('✓ Report confirmed', '#2e7d32');
 }
 
-function exportExcel(){
-  const brand=document.getElementById('rf-brand')?document.getElementById('rf-brand').value:'ALL';
-  const rows=getAllRows(brand,currentFY);
-  const months=[...new Set(rows.map(r=>r.month))].sort(sortM);
-  if(!months.length){alert('No data to export.');return;}
-  // Coerce net to number — guard against undefined/NaN from any source
-  const agg={};
-  rows.forEach(r=>{
-    const net=+r.net||0; // coerce to number, NaN→0
-    if(!agg[r.cfLine])agg[r.cfLine]={};
-    agg[r.cfLine][r.month]=(agg[r.cfLine][r.month]||0)+net;
+// ── Build agg directly from HIST.data + S.consolidated (no getAllRows dependency) ──
+function _buildAgg(brandFilter, fyFilter){
+  const agg={}; // cfLine → month → net
+  const addNet=(cfLine,month,net)=>{
+    net=+net||0; if(!net) return;
+    if(!agg[cfLine]) agg[cfLine]={};
+    agg[cfLine][month]=(agg[cfLine][month]||0)+net;
+  };
+  const brands=brandFilter==='ALL'?Object.keys(HIST.data||{}):[brandFilter].filter(b=>(HIST.data||{})[b]);
+  brands.forEach(brand=>{
+    Object.entries((HIST.data||{})[brand]||{}).forEach(([month,lines])=>{
+      if(!monthInFY(month,fyFilter)) return;
+      Object.entries(lines||{}).forEach(([cfLine,d])=>{
+        // d is stored as a plain number in HIST.data
+        addNet(cfLine, month, typeof d==='object'&&d!==null ? d.net : d);
+      });
+    });
   });
-  const hdr=['Activity','Line Item',...months,'TOTAL'];
-  const data=[hdr];
-  // Opening balance row
-  const allBrands=brand==='ALL'?Object.keys(HIST.closing||{}):[brand];
+  // Also include current session rows
+  (S.consolidated||[]).forEach(r=>{
+    if((brandFilter==='ALL'||r.brand===brandFilter)&&monthInFY(r.month,fyFilter))
+      addNet(r.cfLine, r.month, r.net);
+  });
+  return agg;
+}
+
+function _buildSheetData(agg, months, brandFilter){
+  const data=[];
   const closeLookup={};
-  allBrands.forEach(b=>{Object.entries((HIST.closing||{})[b]||{}).forEach(([m,v])=>{closeLookup[m]=(closeLookup[m]||0)+v;});});
-  // CF chain to derive opening from closing
+  const allBrands=brandFilter==='ALL'?Object.keys(HIST.closing||{}):[brandFilter];
+  allBrands.forEach(b=>Object.entries((HIST.closing||{})[b]||{}).forEach(([m,v])=>{ closeLookup[m]=(closeLookup[m]||0)+(+v||0); }));
+  // Merge closing from current session brandSummary
+  Object.entries(S.brands||{}).forEach(([k,bd])=>{
+    const b=k.replace(/__dup__\w+$/,'');
+    if(brandFilter!=='ALL'&&b!==brandFilter) return;
+    Object.entries(bd.brandSummary||{}).forEach(([m,lines])=>{
+      const cv=+lines['Closing Cash & Cash Equivalents']||0;
+      if(cv&&!closeLookup[m]) closeLookup[m]=(closeLookup[m]||0)+cv;
+    });
+  });
+  // CF chain
   const cfChain={};let cp=null;
   months.forEach(m=>{
     const nc=CF.structure.reduce((s,sec)=>s+sec.items.reduce((ss,i)=>ss+(agg[i]?.[m]||0),0),0);
     const acq=agg['Acquired Cash']?.[m]||0;
-    if(cp===null){const ac=closeLookup[m]||0;cp=ac-acq-nc;}
+    if(cp===null){const ac=closeLookup[m]||0; cp=ac-acq-nc;}
     cfChain[m]={opening:cp,closing:cp+acq+nc};
     cp=cfChain[m].closing;
   });
-  data.push(['','Opening Cash & Cash Equivalents',...months.map(m=>cfChain[m].opening),null]);
-  // Activity sections
+  const tot=arr=>arr.reduce((a,b)=>a+b,0);
+  const hdr=['Activity','Line Item',...months,'TOTAL']; data.push(hdr);
+  data.push(['','Opening Cash & Cash Equivalents',...months.map(m=>Math.round(cfChain[m].opening)),'']);
   CF.structure.forEach(sec=>{
-    data.push([sec.section,'','','']);// section header row (sparse)
+    data.push([sec.section,'']); // section divider
     sec.items.forEach(item=>{
-      const d=agg[item]||{};
-      const vals=months.map(m=>d[m]||0);
-      if(vals.every(v=>v===0))return;
-      data.push([sec.section,item,...vals,vals.reduce((a,b)=>a+b,0)]);
+      const vals=months.map(m=>agg[item]?.[m]||0);
+      if(vals.every(v=>v===0)) return;
+      data.push([sec.section,item,...vals.map(v=>Math.round(v)),Math.round(tot(vals))]);
     });
     const sv=months.map(m=>sec.items.reduce((a,i)=>a+(agg[i]?.[m]||0),0));
-    data.push(['',`NET: ${sec.section}`,...sv,sv.reduce((a,b)=>a+b,0)]);
+    data.push(['',`NET: ${sec.section}`,...sv.map(v=>Math.round(v)),Math.round(tot(sv))]);
   });
   const gv=months.map(m=>CF.structure.reduce((s,sec)=>s+sec.items.reduce((ss,i)=>ss+(agg[i]?.[m]||0),0),0));
-  data.push(['','NET CASH FLOW',...gv,gv.reduce((a,b)=>a+b,0)]);
-  data.push(['','Closing Cash & Cash Equivalents',...months.map(m=>closeLookup[m]||cfChain[m].closing),null]);
+  data.push(['','NET CASH FLOW',...gv.map(v=>Math.round(v)),Math.round(tot(gv))]);
+  data.push(['','Closing Cash & Cash Equivalents',...months.map(m=>Math.round(closeLookup[m]||cfChain[m].closing)),'']);
+  return data;
+}
+
+function _makeSheet(data, months){
   const ws=XLSX.utils.aoa_to_sheet(data);
-  // Column widths
-  ws['!cols']=[{wch:22},{wch:36},...months.map(()=>({wch:14})),{wch:16}];
+  ws['!cols']=[{wch:22},{wch:38},...months.map(()=>({wch:13})),{wch:16}];
+  return ws;
+}
+
+function exportExcel(){
+  const selBrand=document.getElementById('rf-brand')?document.getElementById('rf-brand').value:'ALL';
+  // Determine months scope
+  const monthsSet=new Set();
+  Object.keys(HIST.data||{}).forEach(b=>Object.keys(HIST.data[b]||{}).forEach(m=>{if(monthInFY(m,currentFY))monthsSet.add(m);}));
+  (S.consolidated||[]).forEach(r=>{if(monthInFY(r.month,currentFY))monthsSet.add(r.month);});
+  const months=[...monthsSet].sort(sortM);
+  if(!months.length){alert('No data to export.');return;}
+
   const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,'CF Consolidated');
-  XLSX.writeFile(wb,`GBL_CashFlow_${(brand==='ALL'?'Portfolio':brand).replace(/\s+/g,'_')}_${currentFY}.xlsx`);
+
+  if(selBrand==='ALL'){
+    // Sheet 1: Portfolio summary
+    const aggAll=_buildAgg('ALL',currentFY);
+    const sheetAll=_makeSheet(_buildSheetData(aggAll,months,'ALL'),months);
+    XLSX.utils.book_append_sheet(wb,sheetAll,'Portfolio');
+    // One sheet per brand
+    const brands=[...new Set([...Object.keys(HIST.data||{}),...(S.brandList||[])])].sort();
+    brands.forEach(brand=>{
+      const agg=_buildAgg(brand,currentFY);
+      const hasData=Object.values(agg).some(mv=>Object.values(mv).some(v=>v!==0));
+      if(!hasData) return;
+      const sheetName=brand.replace(/[\\/*?:\[\]]/g,'').slice(0,31);
+      const ws=_makeSheet(_buildSheetData(agg,months,brand),months);
+      XLSX.utils.book_append_sheet(wb,ws,sheetName);
+    });
+  } else {
+    // Single brand
+    const agg=_buildAgg(selBrand,currentFY);
+    const ws=_makeSheet(_buildSheetData(agg,months,selBrand),months);
+    XLSX.utils.book_append_sheet(wb,ws,selBrand.slice(0,31));
+  }
+
+  const fname=`GBL_CashFlow_${(selBrand==='ALL'?'Portfolio':selBrand).replace(/\s+/g,'_')}_${currentFY}.xlsx`;
+  XLSX.writeFile(wb,fname);
 }
 
 // ═══════════════════════════════════════════════════════════

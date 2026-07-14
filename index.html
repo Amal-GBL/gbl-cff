@@ -618,7 +618,8 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
         <select id="rf-brand" class="fsel" onchange="renderReport()" style="margin-left:auto;"></select>
         <button class="btn btn-sm btn-p" onclick="confirmReport()" id="btn-confirm-report" title="Mark report as reviewed and ready to close">✓ Confirm Report</button>
         <button class="btn btn-sm btn-s" onclick="exportExcel()">⬇ CF Export</button>
-        <button class="btn btn-sm btn-s" onclick="exportJuneDump()">⬇ <span id="lbl-dump-btn">Jul-26</span> Brand Dump</button>
+        <select id="dump-month-sel" class="fsel" style="font-size:11px;padding:3px 6px;height:28px;"></select>
+        <button class="btn btn-sm btn-s" onclick="exportJuneDump()">⬇ Cash Data Dump</button>
       </div>
 
       <div class="panel">
@@ -1381,11 +1382,26 @@ function updateMonthLabels(){
   if(navLbl) navLbl.textContent=lbl;
 }
 
+function populateDumpMonths(){
+  const sel=document.getElementById('dump-month-sel');
+  if(!sel) return;
+  // All available months: HIST months + current consolidation month
+  const MN={1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'May',6:'Jun',7:'Jul',8:'Aug',9:'Sep',10:'Oct',11:'Nov',12:'Dec'};
+  const fmtM=m=>{const[mo,yr]=m.split('-');return MN[+mo]+'-'+yr.slice(-2);};
+  const months=[...(HIST.months||[])].sort(sortM).reverse(); // newest first
+  // Also include CONSOLIDATION_MONTH if not already in HIST
+  if(!months.includes(CONSOLIDATION_MONTH)) months.unshift(CONSOLIDATION_MONTH);
+  sel.innerHTML=months.map(m=>`<option value="${m}">${fmtM(m)}${m===CONSOLIDATION_MONTH?' (current)':''}</option>`).join('');
+  // Default to most recent month
+  if(months.length) sel.value=months[0];
+}
+
 function init(){
-  updateMonthLabels();      // set all month labels from CONSOLIDATION_MONTH
-  populateFilters();        // populate brand dropdowns from HIST on load
+  updateMonthLabels();
+  populateFilters();
+  populateDumpMonths();     // populate month selector for cash dump
   checkForSavedSession();
-  loadMappingFromGitHub();  // pre-load saved mappings before any upload
+  loadMappingFromGitHub();
   renderGrid();
 }
 
@@ -3538,82 +3554,88 @@ function exportExcel(){
 
 // ── Export 2: Current month Cash Data dump (matches source Cash Data format) ───
 function exportJuneDump(){
-  const month=CONSOLIDATION_MONTH;
+  // Get selected month from dropdown (falls back to CONSOLIDATION_MONTH)
+  const sel=document.getElementById('dump-month-sel');
+  const month=sel?sel.value:CONSOLIDATION_MONTH;
   const MN={1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'May',6:'Jun',7:'Jul',8:'Aug',9:'Sep',10:'Oct',11:'Nov',12:'Dec'};
   const[mo,yr]=month.split('-');
   const mLabel=MN[+mo]+'-'+yr.slice(-2);
 
-  const txRows=(S.consolidated||[]).filter(r=>r.month===month);
-  if(!txRows.length){
-    alert('No uploaded data for '+mLabel+' in this session.\n\nUpload brand files first, then export.');
-    return;
-  }
+  const isCurrent = month===CONSOLIDATION_MONTH;
 
-  // Activity lookup — covers all cfLines including structural ones
+  // Activity lookup covering all cfLines
   const actOf=cf=>{
     for(const sec of CF.structure){ if(sec.items.includes(cf)) return sec.section; }
-    return cf||'';  // fallback to cfLine itself
+    return cf||'';
   };
 
   const wb=XLSX.utils.book_new();
 
-  // ── Sheet 1: Cash Data (transaction rows + closing balance rows) ──────────
-  // Columns match source Cash Data sheet exactly
+  // ── Build transaction rows ─────────────────────────────────────────────────
+  // For current month: use S.consolidated
+  // For historical months: reconstruct from HIST.data (brand→month→cfLine→net)
+  // HIST.data is aggregated (one net per cfLine per brand per month) — no GL/Bank/Particulars
   const hdr=['Brand','Month','Grouping','BANK','GL','Date','Particulars','Inflow','Outflow','Net','Bank Bal (INR-USD)','Bank Bal (INR)','Activity','CF Line'];
   const rows=[hdr];
-
-  // Transaction rows sorted by Brand → cfLine
-  const sorted=[...txRows].sort((a,b)=>{
-    if(a.brand!==b.brand) return a.brand.localeCompare(b.brand);
-    return (a.cfLine||'').localeCompare(b.cfLine||'');
-  });
-
-  sorted.forEach(r=>{
-    const net=+r.net||0;
-    const inf=net>0 ? Math.round(net) : (r.inflow>0 ? Math.round(r.inflow) : '');
-    const out=net<0 ? Math.round(Math.abs(net)) : (r.outflow<0 ? Math.round(Math.abs(r.outflow)) : '');
-    rows.push([
-      r.brand||'',
-      r.month||'',
-      r.grouping||r.cfLine||'',
-      r.bank||'',
-      r.gl||'',
-      r.date||'',
-      r.particulars||'',
-      inf,
-      out,
-      Math.round(net),
-      '',                            // Bank Bal (INR-USD) — per-transaction balance not stored
-      '',                            // Bank Bal (INR)     — per-transaction balance not stored
-      actOf(r.cfLine),              // Activity (Operations/Investing/Financing)
-      r.cfLine||'',                 // CF Line (mapped)
-    ]);
-  });
-
-  // ── Closing balance rows from brandSummary (bank-type breakdown) ──────────
-  // These appear as separate rows at end of each brand — just like source Cash Data sheet
   const BTYPES=['Cash','Bank Accounts','Deposits','Deposits - Sing','Mutual Fund','OD'];
-  const brandsDone=new Set();
-  sorted.forEach(r=>brandsDone.add(r.brand));  // maintain same brand order
-  [...brandsDone].sort().forEach(brand=>{
-    // Find S.brands entry (may have __dup__ suffix)
-    const bdKey=Object.keys(S.brands||{}).find(k=>k===brand||k.startsWith(brand+'__dup__'))||brand;
-    const bs=((S.brands||{})[bdKey]?.brandSummary||{})[month]||{};
-    BTYPES.forEach(btype=>{
-      const val=bs[btype];
-      if(val===undefined||val===null) return;
-      rows.push([
-        brand, month, btype, '', '', '', '',
-        '', '', '',                  // Inflow / Outflow / Net
-        '',
-        Math.round(val),             // Bank Bal (INR) ← closing balance by type
-        'Closing Balance', btype
-      ]);
+
+  if(isCurrent){
+    // Current month — full transaction detail from S.consolidated
+    const txRows=(S.consolidated||[]).filter(r=>r.month===month);
+    if(!txRows.length){
+      alert('No uploaded data for '+mLabel+' in this session.\n\nUpload brand files first, then export.');
+      return;
+    }
+    const sorted=[...txRows].sort((a,b)=>a.brand!==b.brand?a.brand.localeCompare(b.brand):(a.cfLine||'').localeCompare(b.cfLine||''));
+    sorted.forEach(r=>{
+      const net=+r.net||0;
+      const inf=net>0?Math.round(net):(r.inflow>0?Math.round(r.inflow):'');
+      const out=net<0?Math.round(Math.abs(net)):(r.outflow<0?Math.round(Math.abs(r.outflow)):'');
+      rows.push([r.brand||'',r.month||'',r.grouping||r.cfLine||'',r.bank||'',r.gl||'',r.date||'',r.particulars||'',inf,out,Math.round(net),'','',actOf(r.cfLine),r.cfLine||'']);
     });
-    // Total closing
-    const total=+bs['Closing Cash & Cash Equivalents']||0;
-    if(total) rows.push([brand,month,'Closing Balance','','','','','','','','',Math.round(total),'Closing Balance','Total']);
-  });
+    // Closing balance rows from brandSummary
+    const brandsDone=[...new Set(sorted.map(r=>r.brand))].sort();
+    brandsDone.forEach(brand=>{
+      const bdKey=Object.keys(S.brands||{}).find(k=>k===brand||k.startsWith(brand+'__dup__'))||brand;
+      const bs=((S.brands||{})[bdKey]?.brandSummary||{})[month]||{};
+      BTYPES.forEach(btype=>{
+        const val=bs[btype];
+        if(val===undefined||val===null) return;
+        rows.push([brand,month,btype,'','','','','','','','',Math.round(val),'Closing Balance',btype]);
+      });
+      const total=+bs['Closing Cash & Cash Equivalents']||0;
+      if(total) rows.push([brand,month,'Closing Balance','','','','','','','','',Math.round(total),'Closing Balance','Total']);
+    });
+  } else {
+    // Historical month — from HIST.data (aggregated; no GL/Bank/Particulars detail)
+    const histBrands=Object.keys(HIST.data||{}).sort();
+    let hasAny=false;
+    histBrands.forEach(brand=>{
+      const lines=(HIST.data||{})[brand]?.[month]||{};
+      if(!Object.keys(lines).length) return;
+      hasAny=true;
+      // Sort by cfLine
+      Object.entries(lines).sort(([a],[b])=>a.localeCompare(b)).forEach(([cfLine,d])=>{
+        const net=typeof d==='object'&&d!==null?(+d.net||0):(+d||0);
+        if(!net) return;
+        const inf=net>0?Math.round(net):'';
+        const out=net<0?Math.round(Math.abs(net)):'';
+        rows.push([brand,month,cfLine,'','','','[aggregated]',inf,out,Math.round(net),'','',actOf(cfLine),cfLine]);
+      });
+      // Closing balance from HIST.closing + HIST.breakdown
+      BTYPES.forEach(btype=>{
+        const val=(HIST.breakdown||{})[brand]?.[month]?.[btype];
+        if(val===undefined||val===null) return;
+        rows.push([brand,month,btype,'','','','','','','','',Math.round(val),'Closing Balance',btype]);
+      });
+      const total=(HIST.closing||{})[brand]?.[month];
+      if(total) rows.push([brand,month,'Closing Balance','','','','','','','','',Math.round(total),'Closing Balance','Total']);
+    });
+    if(!hasAny){
+      alert('No data found for '+mLabel+' in historical records.');
+      return;
+    }
+  }
 
   const ws=XLSX.utils.aoa_to_sheet(rows);
   ws['!cols']=[{wch:18},{wch:10},{wch:26},{wch:26},{wch:26},{wch:13},{wch:38},{wch:13},{wch:13},{wch:13},{wch:16},{wch:16},{wch:22},{wch:30}];
@@ -3621,24 +3643,38 @@ function exportJuneDump(){
   ws['!autofilter']={ref:`A1:N${rows.length}`};
   XLSX.utils.book_append_sheet(wb,ws,mLabel+' Cash Data');
 
-  // ── Sheet 2: Closing summary by brand ─────────────────────────────────────
-  const sumHdr=['Brand','Month','Opening','Cash','Bank Accounts','Deposits','Deposits - Sing','Mutual Fund','OD','Total Closing','Net CF','Check'];
+  // ── Closing summary sheet ──────────────────────────────────────────────────
+  const sumHdr=['Brand','Month','Opening','Cash','Bank Accounts','Deposits','Deposits - Sing','Mutual Fund','OD','Total Closing','Net CF'];
   const sumRows=[sumHdr];
-  const allBrands=[...brandsDone].sort();
+  const allBrands=isCurrent
+    ? [...new Set((S.consolidated||[]).filter(r=>r.month===month).map(r=>r.brand))].sort()
+    : Object.keys(HIST.data||{}).filter(b=>(HIST.data||{})[b]?.[month]).sort();
   let portClose=0,portOpen=0,portNet=0;
   allBrands.forEach(brand=>{
-    const bdKey=Object.keys(S.brands||{}).find(k=>k===brand||k.startsWith(brand+'__dup__'))||brand;
-    const bs=((S.brands||{})[bdKey]?.brandSummary||{})[month]||{};
-    const closing=+bs['Closing Cash & Cash Equivalents']||0;
-    const opening=+bs['Opening Cash & Cash Equivalents']||0;
-    const netCF=txRows.filter(r=>r.brand===brand).reduce((a,r)=>a+(+r.net||0),0);
-    const check=closing-opening-netCF;
-    sumRows.push([brand,month,Math.round(opening),...BTYPES.map(t=>Math.round(bs[t]||0)),Math.round(closing),Math.round(netCF),Math.round(check)]);
+    let closing=0,opening=0,netCF=0;
+    const btVals=BTYPES.map(()=>0);
+    if(isCurrent){
+      const bdKey=Object.keys(S.brands||{}).find(k=>k===brand||k.startsWith(brand+'__dup__'))||brand;
+      const bs=((S.brands||{})[bdKey]?.brandSummary||{})[month]||{};
+      closing=+bs['Closing Cash & Cash Equivalents']||0;
+      opening=+bs['Opening Cash & Cash Equivalents']||0;
+      netCF=(S.consolidated||[]).filter(r=>r.brand===brand&&r.month===month).reduce((a,r)=>a+(+r.net||0),0);
+      BTYPES.forEach((t,i)=>{btVals[i]=Math.round(bs[t]||0);});
+    } else {
+      closing=(HIST.closing||{})[brand]?.[month]||0;
+      const lines=(HIST.data||{})[brand]?.[month]||{};
+      netCF=Object.values(lines).reduce((a,d)=>a+(typeof d==='object'&&d!==null?(+d.net||0):(+d||0)),0);
+      // Opening = prev month closing
+      const prevMs=Object.keys((HIST.closing||{})[brand]||{}).filter(m=>sortM(m,month)<0).sort(sortM);
+      opening=(HIST.closing||{})[brand]?.[prevMs[prevMs.length-1]]||0;
+      BTYPES.forEach((t,i)=>{btVals[i]=Math.round((HIST.breakdown||{})[brand]?.[month]?.[t]||0);});
+    }
+    sumRows.push([brand,month,Math.round(opening),...btVals,Math.round(closing),Math.round(netCF)]);
     portClose+=closing; portOpen+=opening; portNet+=netCF;
   });
-  sumRows.push(['PORTFOLIO TOTAL',month,Math.round(portOpen),...BTYPES.map(()=>0),Math.round(portClose),Math.round(portNet),Math.round(portClose-portOpen-portNet)]);
+  sumRows.push(['PORTFOLIO TOTAL',month,Math.round(portOpen),...BTYPES.map(()=>0),Math.round(portClose),Math.round(portNet)]);
   const ws2=XLSX.utils.aoa_to_sheet(sumRows);
-  ws2['!cols']=[{wch:20},{wch:10},{wch:14},...BTYPES.map(()=>({wch:16})),{wch:16},{wch:14},{wch:12}];
+  ws2['!cols']=[{wch:20},{wch:10},{wch:14},...BTYPES.map(()=>({wch:16})),{wch:16},{wch:14}];
   ws2['!freeze']={xSplit:0,ySplit:1};
   XLSX.utils.book_append_sheet(wb,ws2,mLabel+' Closing Summary');
 

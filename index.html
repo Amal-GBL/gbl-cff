@@ -3361,15 +3361,51 @@ function exportExcel(){
   const brand=document.getElementById('rf-brand')?document.getElementById('rf-brand').value:'ALL';
   const rows=getAllRows(brand,currentFY);
   const months=[...new Set(rows.map(r=>r.month))].sort(sortM);
-  const agg={};rows.forEach(r=>{if(!agg[r.cfLine])agg[r.cfLine]={};agg[r.cfLine][r.month]=(agg[r.cfLine][r.month]||0)+r.net;});
-  const hdr=['Activity','Line Item',...months,'TOTAL'];const data=[hdr];
+  if(!months.length){alert('No data to export.');return;}
+  // Coerce net to number — guard against undefined/NaN from any source
+  const agg={};
+  rows.forEach(r=>{
+    const net=+r.net||0; // coerce to number, NaN→0
+    if(!agg[r.cfLine])agg[r.cfLine]={};
+    agg[r.cfLine][r.month]=(agg[r.cfLine][r.month]||0)+net;
+  });
+  const hdr=['Activity','Line Item',...months,'TOTAL'];
+  const data=[hdr];
+  // Opening balance row
+  const allBrands=brand==='ALL'?Object.keys(HIST.closing||{}):[brand];
+  const closeLookup={};
+  allBrands.forEach(b=>{Object.entries((HIST.closing||{})[b]||{}).forEach(([m,v])=>{closeLookup[m]=(closeLookup[m]||0)+v;});});
+  // CF chain to derive opening from closing
+  const cfChain={};let cp=null;
+  months.forEach(m=>{
+    const nc=CF.structure.reduce((s,sec)=>s+sec.items.reduce((ss,i)=>ss+(agg[i]?.[m]||0),0),0);
+    const acq=agg['Acquired Cash']?.[m]||0;
+    if(cp===null){const ac=closeLookup[m]||0;cp=ac-acq-nc;}
+    cfChain[m]={opening:cp,closing:cp+acq+nc};
+    cp=cfChain[m].closing;
+  });
+  data.push(['','Opening Cash & Cash Equivalents',...months.map(m=>cfChain[m].opening),null]);
+  // Activity sections
   CF.structure.forEach(sec=>{
-    sec.items.forEach(item=>{const d=agg[item]||{};const vals=months.map(m=>d[m]||0);if(vals.every(v=>v===0))return;data.push([sec.section,item,...vals,vals.reduce((a,b)=>a+b,0)]);});
-    const sv=months.map(m=>sec.items.reduce((a,i)=>(agg[i]?.[m]||0)+a,0));data.push(['',`NET: ${sec.section}`,...sv,sv.reduce((a,b)=>a+b,0)]);});
-  const gv=months.map(m=>rows.filter(r=>r.month===m).reduce((a,r)=>a+r.net,0));
+    data.push([sec.section,'','','']);// section header row (sparse)
+    sec.items.forEach(item=>{
+      const d=agg[item]||{};
+      const vals=months.map(m=>d[m]||0);
+      if(vals.every(v=>v===0))return;
+      data.push([sec.section,item,...vals,vals.reduce((a,b)=>a+b,0)]);
+    });
+    const sv=months.map(m=>sec.items.reduce((a,i)=>a+(agg[i]?.[m]||0),0));
+    data.push(['',`NET: ${sec.section}`,...sv,sv.reduce((a,b)=>a+b,0)]);
+  });
+  const gv=months.map(m=>CF.structure.reduce((s,sec)=>s+sec.items.reduce((ss,i)=>ss+(agg[i]?.[m]||0),0),0));
   data.push(['','NET CASH FLOW',...gv,gv.reduce((a,b)=>a+b,0)]);
-  const ws=XLSX.utils.aoa_to_sheet(data);const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,'CF Consolidated');XLSX.writeFile(wb,'GBL_CashFlow_Consolidated.xlsx');
+  data.push(['','Closing Cash & Cash Equivalents',...months.map(m=>closeLookup[m]||cfChain[m].closing),null]);
+  const ws=XLSX.utils.aoa_to_sheet(data);
+  // Column widths
+  ws['!cols']=[{wch:22},{wch:36},...months.map(()=>({wch:14})),{wch:16}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'CF Consolidated');
+  XLSX.writeFile(wb,`GBL_CashFlow_${(brand==='ALL'?'Portfolio':brand).replace(/\s+/g,'_')}_${currentFY}.xlsx`);
 }
 
 // ═══════════════════════════════════════════════════════════

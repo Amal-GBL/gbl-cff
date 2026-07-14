@@ -3397,7 +3397,8 @@ function _getCloseLookup(brandFilter){
   return cl;
 }
 
-function _buildCFRows(agg, cl, months){
+function _buildCFRows(agg, cl, months, brandFilter){
+  // CF chain for opening/closing
   const chain={};let cp=null;
   months.forEach(m=>{
     const nc=CF.structure.reduce((s,sec)=>s+sec.items.reduce((ss,i)=>ss+(agg[i]?.[m]||0),0),0);
@@ -3410,25 +3411,69 @@ function _buildCFRows(agg, cl, months){
   const tot=arr=>arr.reduce((a,b)=>a+b,0);
   const MN={1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'May',6:'Jun',7:'Jul',8:'Aug',9:'Sep',10:'Oct',11:'Nov',12:'Dec'};
   const fmtM=m=>{const[mo,yr]=m.split('-');return MN[+mo]+'-'+yr.slice(-2);};
+
+  // Build breakdown lookup (Cash, Bank Accounts, Deposits, Deposits-Sing, Mutual Fund, OD)
+  const BTYPES=['Cash','Bank Accounts','Deposits','Deposits - Sing','Mutual Fund','OD'];
+  const bdLookup={}; // type → month → total
+  BTYPES.forEach(t=>{bdLookup[t]={};});
+  const bdBrands=(brandFilter&&brandFilter!=='ALL')?[brandFilter]:Object.keys(HIST.breakdown||{});
+  bdBrands.forEach(brand=>{
+    Object.entries((HIST.breakdown||{})[brand]||{}).forEach(([m,types])=>{
+      BTYPES.forEach(t=>{
+        if(types[t]) bdLookup[t][m]=(bdLookup[t][m]||0)+types[t];
+      });
+    });
+  });
+  // Also merge from S.brands brandSummary for current month
+  Object.entries(S.brands||{}).forEach(([k,bd])=>{
+    const b=k.replace(/__dup__\w+$/,'');
+    if(brandFilter&&brandFilter!=='ALL'&&b!==brandFilter) return;
+    Object.entries(bd.brandSummary||{}).forEach(([m,lines])=>{
+      BTYPES.forEach(t=>{if(lines[t]) bdLookup[t][m]=(bdLookup[t][m]||0)+lines[t];});
+    });
+  });
+
   const rows=[];
-  rows.push(['Activity','Line Item',...months.map(fmtM),'TOTAL']);
-  rows.push(['',' Opening Balance',...months.map(m=>R(chain[m].opening)),'']);
+  // ── Header ──
+  rows.push(['LINE ITEM (₹)',...months.map(fmtM),'TOTAL']);
+
+  // ── 3 TIER ──
+  rows.push(['3 TIER']);
+  rows.push([' Opening Cash & Cash Equivalents',...months.map(m=>R(chain[m].opening)),'']);
+  const acqVals=months.map(m=>agg['Acquired Cash']?.[m]||0);
+  if(acqVals.some(v=>v!==0)) rows.push([' Acquired Cash',...acqVals.map(R),R(tot(acqVals))]);
+  rows.push([' Closing Cash & Cash Equivalents',...months.map(m=>R(cl[m]||chain[m].closing)),'']);
   rows.push([]);
+
+  // ── Closing Balance Breakdown ──
+  rows.push([' Closing Balance']);
+  BTYPES.forEach(t=>{
+    const vals=months.map(m=>bdLookup[t][m]||0);
+    if(vals.every(v=>v===0)) return;
+    rows.push(['  '+t,...vals.map(R),R(tot(vals))]);
+  });
+  rows.push([' Total Closing',...months.map(m=>R(cl[m]||chain[m].closing)),'']);
+  const checkVals=months.map(m=>R(cl[m]||chain[m].closing)-R(chain[m].closing));
+  rows.push([' Check',...checkVals,'']);
+  rows.push([]);
+
+  // ── CF Sections ──
   CF.structure.forEach(sec=>{
     rows.push([sec.section]);
     sec.items.forEach(item=>{
       const vals=months.map(m=>agg[item]?.[m]||0);
       if(vals.every(v=>v===0)) return;
-      rows.push([sec.section,item,...vals.map(R),R(tot(vals))]);
+      rows.push([' '+item,...vals.map(R),R(tot(vals))]);
     });
     const sv=months.map(m=>sec.items.reduce((a,i)=>a+(agg[i]?.[m]||0),0));
-    rows.push(['',' Net '+sec.section,...sv.map(R),R(tot(sv))]);
+    rows.push([' Net '+sec.section,...sv.map(R),R(tot(sv))]);
     rows.push([]);
   });
+
+  // ── NET CF ──
   const gv=months.map(m=>CF.structure.reduce((s,sec)=>s+sec.items.reduce((ss,i)=>ss+(agg[i]?.[m]||0),0),0));
-  rows.push(['',' NET CASH FLOW',...gv.map(R),R(tot(gv))]);
-  rows.push([]);
-  rows.push(['',' Closing Balance',...months.map(m=>R(cl[m]||chain[m].closing)),'']);
+  rows.push([' NET CASH FLOW',...gv.map(R),R(tot(gv))]);
+
   return rows;
 }
 
@@ -3445,30 +3490,46 @@ function exportExcel(){
   const wb=XLSX.utils.book_new();
   const allBrands=[...new Set([...Object.keys(HIST.data||{}),...(S.brandList||[])])].sort();
 
-  // Index sheet
-  const idxRows=[['GBL Cash Flow Statement'],[''],[`FY Filter: ${fyFilter}`],[''],[`Sheet`,`Brands`]];
-  idxRows.push(['Portfolio','All brands consolidated']);
-  allBrands.forEach(b=>idxRows.push([b,'']));
-  const idxWs=XLSX.utils.aoa_to_sheet(idxRows);
-  idxWs['!cols']=[{wch:25},{wch:30}];
+  // Track which brand sheets actually get created
+  const sheetNames=['Portfolio'];
+  const validBrands=[];
+  allBrands.forEach(brand=>{
+    const agg=_buildAgg(brand,fyFilter);
+    if(Object.values(agg).some(mv=>Object.values(mv).some(v=>v!==0))) validBrands.push(brand);
+  });
+  validBrands.forEach(b=>sheetNames.push(b.slice(0,31)));
+
+  // Index sheet with working hyperlinks
+  const idxWs=XLSX.utils.aoa_to_sheet([['GBL Cash Flow — '+fyFilter]]);
+  // Add hyperlinked rows manually
+  const enc=s=>s.replace(/'/g,"''");
+  const idxData=[['GBL Cash Flow Statement'],['FY: '+fyFilter],[''],['Sheet','']];
+  sheetNames.forEach(sn=>idxData.push([sn,'→ click to navigate']));
+  XLSX.utils.sheet_add_aoa(idxWs,idxData,{origin:'A1'});
+  // Add hyperlinks: =Hyperlink("#SheetName!A1","SheetName")
+  sheetNames.forEach((sn,i)=>{
+    const cellRef='A'+(5+i); // row 5 onwards (1-indexed)
+    if(!idxWs[cellRef]) idxWs[cellRef]={t:'s',v:sn};
+    idxWs[cellRef].l={Target:`#'${enc(sn)}'!A1`};
+  });
+  idxWs['!cols']=[{wch:28},{wch:22}];
   XLSX.utils.book_append_sheet(wb,idxWs,'Index');
 
   // Portfolio sheet
   const aggAll=_buildAgg('ALL',fyFilter);
   const clAll=_getCloseLookup('ALL');
-  const wsAll=XLSX.utils.aoa_to_sheet(_buildCFRows(aggAll,clAll,months));
-  wsAll['!cols']=[{wch:22},{wch:36},...months.map(()=>({wch:12})),{wch:14}];
-  wsAll['!freeze']={xSplit:2,ySplit:1};
+  const wsAll=XLSX.utils.aoa_to_sheet(_buildCFRows(aggAll,clAll,months,'ALL'));
+  wsAll['!cols']=[{wch:36},...months.map(()=>({wch:12})),{wch:14}];
+  wsAll['!freeze']={xSplit:1,ySplit:1};
   XLSX.utils.book_append_sheet(wb,wsAll,'Portfolio');
 
   // One sheet per brand
-  allBrands.forEach(brand=>{
+  validBrands.forEach(brand=>{
     const agg=_buildAgg(brand,fyFilter);
-    if(!Object.values(agg).some(mv=>Object.values(mv).some(v=>v!==0))) return;
     const cl=_getCloseLookup(brand);
-    const ws=XLSX.utils.aoa_to_sheet(_buildCFRows(agg,cl,months));
-    ws['!cols']=[{wch:22},{wch:36},...months.map(()=>({wch:12})),{wch:14}];
-    ws['!freeze']={xSplit:2,ySplit:1};
+    const ws=XLSX.utils.aoa_to_sheet(_buildCFRows(agg,cl,months,brand));
+    ws['!cols']=[{wch:36},...months.map(()=>({wch:12})),{wch:14}];
+    ws['!freeze']={xSplit:1,ySplit:1};
     XLSX.utils.book_append_sheet(wb,ws,brand.slice(0,31));
   });
 

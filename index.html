@@ -1672,6 +1672,12 @@ async function parseFile(file){
     const iDATE=ci('Date');
     const iPART=ci('Particulars');
     const iVCH=ci('Vch No')>=0?ci('Vch No'):ci('VchNo');
+    const iINVBRAND=ci('Investment Brand');
+    const iACTIVITY=ci('Activity');
+    const iTYPE=ci('Type');
+    const iNETUSD=ci('Net in $');
+    const iBALUSD=ci('Bank Bal (INR-USD)');
+    const iBALINR=ci('Bank Bal (INR)')>=0?ci('Bank Bal (INR)'):ci('BankBalINR')>=0?ci('BankBalINR'):-1;
     if(iG<0){plog(`  ✗ No Grouping column`,'error');return;}
     if(iM<0){plog(`  ✗ No Month column`,'error');return;}
     plog(`  Cols — Grouping:${iG} Month:${iM} Inflow:${iI} Outflow:${iO}`,'info');
@@ -1711,6 +1717,12 @@ async function parseFile(file){
         date:dateStr,
         particulars:iPART>=0?String(row[iPART]||'').trim():'',
         vchNo:iVCH>=0?String(row[iVCH]||'').trim():'',
+        invBrand:iINVBRAND>=0?String(row[iINVBRAND]||'').trim():'',
+        activity:iACTIVITY>=0?String(row[iACTIVITY]||'').trim():'',
+        type:iTYPE>=0?String(row[iTYPE]||'').trim():'',
+        netUSD:iNETUSD>=0?(+row[iNETUSD]||0):0,
+        balUSD:iBALUSD>=0?(+row[iBALUSD]||''):'',
+        balINR:iBALINR>=0?(+row[iBALINR]||''):'',
         _uid: brand+'||'+String(grp).trim()+'||'+Math.round(netVal)+'||'+(iVCH>=0?String(row[iVCH]||'').trim():'')
       });
     }
@@ -3561,24 +3573,30 @@ function exportJuneDump(){
   const mLabel=MN[+mo]+'-'+yr.slice(-2);
   const isCurrent=month===CONSOLIDATION_MONTH;
 
-  // Headers: exact Cash Data format + Activity column
-  const hdr=['Brand','Month','Grouping','BANK','GL','Date','Particulars','Inflow','Outflow','Net','Bank Bal (INR-USD)','Bank Bal (INR)','Activity'];
+  // Exact 16-column format from source Cash Data sheet
+  const hdr=['Brand','Month','Grouping','BANK','GL','Date','Particulars','Inflow','Outflow','Net','Bank Bal (INR-USD)','Bank Bal (INR)','Investment Brand','Activity','Type','Net in $'];
   const rows=[hdr];
   const BTYPES=['Cash','Bank Accounts','Deposits','Deposits - Sing','Mutual Fund','OD'];
 
-  // ── Transaction rows ───────────────────────────────────────────────────────
   if(isCurrent){
+    // Current month: full transaction rows from S.consolidated (all 16 fields stored)
     const txRows=(S.consolidated||[]).filter(r=>r.month===month);
     if(!txRows.length){
       alert('No uploaded data for '+mLabel+'.\n\nUpload brand files first, then export.');
       return;
     }
-    const sorted=[...txRows].sort((a,b)=>a.brand!==b.brand?a.brand.localeCompare(b.brand):(a.cfLine||'').localeCompare(b.cfLine||''));
+    const sorted=[...txRows].sort((a,b)=>a.brand!==b.brand?a.brand.localeCompare(b.brand):(a.grouping||'').localeCompare(b.grouping||''));
     sorted.forEach(r=>{
       const net=+r.net||0;
-      const inf=net>0?Math.round(net):(r.inflow>0?Math.round(r.inflow):'');
-      const out=net<0?Math.round(Math.abs(net)):(r.outflow<0?Math.round(Math.abs(r.outflow)):'');
-      rows.push([r.brand||'',r.month||'',r.grouping||r.cfLine||'',r.bank||'',r.gl||'',r.date||'',r.particulars||'',inf,out,Math.round(net),'','',net>=0?'Receipts':'Payments']);
+      const inf=net>0?net:(+r.inflow||'');
+      const out=net<0?Math.abs(net):(+r.outflow?Math.abs(r.outflow):'');
+      rows.push([
+        r.brand||'', r.month||'', r.grouping||'',
+        r.bank||'', r.gl||'', r.date||'', r.particulars||'',
+        inf, out, net,
+        r.balUSD||'', r.balINR||'',
+        r.invBrand||'', r.activity||'', r.type||'', r.netUSD||''
+      ]);
     });
     // Closing balance rows from brandSummary
     const brandsDone=[...new Set(sorted.map(r=>r.brand))].sort();
@@ -3588,11 +3606,11 @@ function exportJuneDump(){
       BTYPES.forEach(btype=>{
         const val=bs[btype];
         if(val===undefined||val===null) return;
-        rows.push([brand,month,btype,'','','','Closing Balance','','','','',Math.round(val),'Closing Balance']);
+        rows.push([brand,month,btype,'','','','Closing Balance','','','','',Math.round(val),'','Closing Balance','','']);
       });
     });
   } else {
-    // Historical month from HIST.data
+    // Historical month: aggregated from HIST.data (no transaction detail available)
     const histBrands=Object.keys(HIST.data||{}).sort();
     let hasAny=false;
     histBrands.forEach(brand=>{
@@ -3604,22 +3622,21 @@ function exportJuneDump(){
         if(!net) return;
         const inf=net>0?Math.round(net):'';
         const out=net<0?Math.round(Math.abs(net)):'';
-        rows.push([brand,month,cfLine,'','','','[aggregated]',inf,out,Math.round(net),'','',net>=0?'Receipts':'Payments']);
+        rows.push([brand,month,cfLine,'','','','[aggregated]',inf,out,Math.round(net),'','','','','','']);
       });
-      // Closing balance rows from HIST.breakdown
       BTYPES.forEach(btype=>{
         const val=(HIST.breakdown||{})[brand]?.[month]?.[btype];
         if(val===undefined||val===null) return;
-        rows.push([brand,month,btype,'','','','Closing Balance','','','','',Math.round(val),'Closing Balance']);
+        rows.push([brand,month,btype,'','','','Closing Balance','','','','',Math.round(val),'','Closing Balance','','']);
       });
     });
-    if(!hasAny){alert('No data found for '+mLabel+' in historical records.');return;}
+    if(!hasAny){alert('No data found for '+mLabel+'.');return;}
   }
 
   const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:18},{wch:10},{wch:28},{wch:28},{wch:28},{wch:13},{wch:40},{wch:13},{wch:13},{wch:13},{wch:15},{wch:15},{wch:13}];
+  ws['!cols']=[{wch:18},{wch:10},{wch:28},{wch:28},{wch:28},{wch:13},{wch:40},{wch:13},{wch:13},{wch:13},{wch:15},{wch:15},{wch:18},{wch:13},{wch:13},{wch:12}];
   ws['!freeze']={xSplit:0,ySplit:1};
-  ws['!autofilter']={ref:`A1:M${rows.length}`};
+  ws['!autofilter']={ref:`A1:P${rows.length}`};
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,mLabel+' Cash Data');
   XLSX.writeFile(wb,`GBL_CashData_${mLabel.replace('-','')}.xlsx`);

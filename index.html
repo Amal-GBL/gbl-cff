@@ -617,8 +617,8 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
         </div>
         <select id="rf-brand" class="fsel" onchange="renderReport()" style="margin-left:auto;"></select>
         <button class="btn btn-sm btn-p" onclick="confirmReport()" id="btn-confirm-report" title="Mark report as reviewed and ready to close">✓ Confirm Report</button>
-        <button class="btn btn-sm btn-s" onclick="exportExcel()">⬇ CF Export (All FY)</button>
-        <button class="btn btn-sm btn-s" onclick="exportJuneDump()">⬇ <span id="lbl-dump-btn">Jun-26</span> Brand Dump</button>
+        <button class="btn btn-sm btn-s" onclick="exportExcel()">⬇ CF Export</button>
+        <button class="btn btn-sm btn-s" onclick="exportJuneDump()">⬇ <span id="lbl-dump-btn">Jul-26</span> Brand Dump</button>
       </div>
 
       <div class="panel">
@@ -1366,7 +1366,7 @@ function updateMonthLabels(){
              7:'Jul',8:'Aug',9:'Sep',10:'Oct',11:'Nov',12:'Dec'};
   const parts=CONSOLIDATION_MONTH.split('-');
   const lbl=MN[parseInt(parts[0])]+'-'+parts[1].slice(-2);
-  const ids=['lbl-month-a','lbl-month-b','lbl-month-c','lbl-dump-btn','lbl-month-d','lbl-month-e',
+  const ids=['lbl-month-a','lbl-dump-btn','lbl-month-b','lbl-month-c','lbl-month-d','lbl-month-e',
              'lbl-month-f','lbl-month-g','lbl-month-h','lbl-month-i','lbl-month-j',
              'lbl-month-k','lbl-month-l','lbl-month-m'];
   ids.forEach(id=>{
@@ -3382,14 +3382,6 @@ function _buildAgg(brandFilter, fyFilter){
   return agg;
 }
 
-function _getMonths(brandFilter, fyFilter){
-  const s=new Set();
-  const brands=brandFilter==='ALL'?Object.keys(HIST.data||{}):[brandFilter].filter(b=>(HIST.data||{})[b]);
-  brands.forEach(b=>Object.keys((HIST.data||{})[b]||{}).forEach(m=>{if(monthInFY(m,fyFilter))s.add(m);}));
-  (S.consolidated||[]).forEach(r=>{if((brandFilter==='ALL'||r.brand===brandFilter)&&monthInFY(r.month,fyFilter))s.add(r.month);});
-  return [...s].sort(sortM);
-}
-
 function _getCloseLookup(brandFilter){
   const cl={};
   const brands=brandFilter==='ALL'?Object.keys(HIST.closing||{}):[brandFilter];
@@ -3405,10 +3397,7 @@ function _getCloseLookup(brandFilter){
   return cl;
 }
 
-function _buildCFSheet(wb, sheetLabel, brandFilter, fyFilter, months){
-  const agg=_buildAgg(brandFilter,fyFilter);
-  const cl=_getCloseLookup(brandFilter);
-  // CF chain for opening
+function _buildCFRows(agg, cl, months){
   const chain={};let cp=null;
   months.forEach(m=>{
     const nc=CF.structure.reduce((s,sec)=>s+sec.items.reduce((ss,i)=>ss+(agg[i]?.[m]||0),0),0);
@@ -3421,16 +3410,12 @@ function _buildCFSheet(wb, sheetLabel, brandFilter, fyFilter, months){
   const tot=arr=>arr.reduce((a,b)=>a+b,0);
   const MN={1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'May',6:'Jun',7:'Jul',8:'Aug',9:'Sep',10:'Oct',11:'Nov',12:'Dec'};
   const fmtM=m=>{const[mo,yr]=m.split('-');return MN[+mo]+'-'+yr.slice(-2);};
-
   const rows=[];
-  // Header
   rows.push(['Activity','Line Item',...months.map(fmtM),'TOTAL']);
-  // Opening
   rows.push(['',' Opening Balance',...months.map(m=>R(chain[m].opening)),'']);
-  rows.push(['','',...months.map(()=>null),null]);
-  // Sections
+  rows.push([]);
   CF.structure.forEach(sec=>{
-    rows.push([sec.section,'',...months.map(()=>null),null]);
+    rows.push([sec.section]);
     sec.items.forEach(item=>{
       const vals=months.map(m=>agg[item]?.[m]||0);
       if(vals.every(v=>v===0)) return;
@@ -3438,91 +3423,532 @@ function _buildCFSheet(wb, sheetLabel, brandFilter, fyFilter, months){
     });
     const sv=months.map(m=>sec.items.reduce((a,i)=>a+(agg[i]?.[m]||0),0));
     rows.push(['',' Net '+sec.section,...sv.map(R),R(tot(sv))]);
-    rows.push(['','',...months.map(()=>null),null]);
+    rows.push([]);
   });
-  // NET CF
   const gv=months.map(m=>CF.structure.reduce((s,sec)=>s+sec.items.reduce((ss,i)=>ss+(agg[i]?.[m]||0),0),0));
   rows.push(['',' NET CASH FLOW',...gv.map(R),R(tot(gv))]);
-  rows.push(['','',...months.map(()=>null),null]);
-  // Closing
+  rows.push([]);
   rows.push(['',' Closing Balance',...months.map(m=>R(cl[m]||chain[m].closing)),'']);
-
-  const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:22},{wch:36},...months.map(()=>({wch:12})),{wch:14}];
-  ws['!freeze']={xSplit:2,ySplit:1};
-  XLSX.utils.book_append_sheet(wb,ws,sheetLabel.slice(0,31));
+  return rows;
 }
 
-// ── Export 1: CF Statement (Portfolio + brand sheets with Index) ──────────────
+// ── Export 1: CF Statement — Portfolio + one sheet per brand ─────────────────
 function exportExcel(){
   const fyFilter=currentFY;
-  const months=_getMonths('ALL',fyFilter);
+  // Collect all months across all brands
+  const monthsSet=new Set();
+  Object.keys(HIST.data||{}).forEach(b=>Object.keys((HIST.data||{})[b]||{}).forEach(m=>{if(monthInFY(m,fyFilter))monthsSet.add(m);}));
+  (S.consolidated||[]).forEach(r=>{if(monthInFY(r.month,fyFilter))monthsSet.add(r.month);});
+  const months=[...monthsSet].sort(sortM);
   if(!months.length){alert('No data to export.');return;}
+
   const wb=XLSX.utils.book_new();
+  const allBrands=[...new Set([...Object.keys(HIST.data||{}),...(S.brandList||[])])].sort();
 
   // Index sheet
-  const allBrands=[...new Set([...Object.keys(HIST.data||{}),...(S.brandList||[])])].sort();
-  const idxRows=[['GBL Cash Flow Export'],[''],['Sheet','Description']];
+  const idxRows=[['GBL Cash Flow Statement'],[''],[`FY Filter: ${fyFilter}`],[''],[`Sheet`,`Brands`]];
   idxRows.push(['Portfolio','All brands consolidated']);
-  allBrands.forEach(b=>idxRows.push([b,'Brand CF Statement']));
+  allBrands.forEach(b=>idxRows.push([b,'']));
   const idxWs=XLSX.utils.aoa_to_sheet(idxRows);
   idxWs['!cols']=[{wch:25},{wch:30}];
   XLSX.utils.book_append_sheet(wb,idxWs,'Index');
 
   // Portfolio sheet
-  _buildCFSheet(wb,'Portfolio','ALL',fyFilter,months);
+  const aggAll=_buildAgg('ALL',fyFilter);
+  const clAll=_getCloseLookup('ALL');
+  const wsAll=XLSX.utils.aoa_to_sheet(_buildCFRows(aggAll,clAll,months));
+  wsAll['!cols']=[{wch:22},{wch:36},...months.map(()=>({wch:12})),{wch:14}];
+  wsAll['!freeze']={xSplit:2,ySplit:1};
+  XLSX.utils.book_append_sheet(wb,wsAll,'Portfolio');
 
   // One sheet per brand
   allBrands.forEach(brand=>{
     const agg=_buildAgg(brand,fyFilter);
-    const hasData=Object.values(agg).some(mv=>Object.values(mv).some(v=>v!==0));
-    if(!hasData) return;
-    _buildCFSheet(wb,brand,brand,fyFilter,months);
+    if(!Object.values(agg).some(mv=>Object.values(mv).some(v=>v!==0))) return;
+    const cl=_getCloseLookup(brand);
+    const ws=XLSX.utils.aoa_to_sheet(_buildCFRows(agg,cl,months));
+    ws['!cols']=[{wch:22},{wch:36},...months.map(()=>({wch:12})),{wch:14}];
+    ws['!freeze']={xSplit:2,ySplit:1};
+    XLSX.utils.book_append_sheet(wb,ws,brand.slice(0,31));
   });
 
-  XLSX.writeFile(wb,'GBL_CashFlow_'+fyFilter+'.xlsx');
+  XLSX.writeFile(wb,`GBL_CashFlow_${fyFilter}.xlsx`);
 }
 
-// ── Export 2: Jun-26 Brand-wise Consolidated Dump ────────────────────────────
+// ── Export 2: Current month brand-wise dump ───────────────────────────────────
 function exportJuneDump(){
-  const month=CONSOLIDATION_MONTH; // e.g. '6-2026'
+  const month=CONSOLIDATION_MONTH;
   const MN={1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'May',6:'Jun',7:'Jul',8:'Aug',9:'Sep',10:'Oct',11:'Nov',12:'Dec'};
   const[mo,yr]=month.split('-');
   const mLabel=MN[+mo]+'-'+yr.slice(-2);
   const allBrands=[...new Set([...Object.keys(HIST.data||{}),...(S.brandList||[])])].sort();
-  // All CF line items in order
   const allItems=CF.structure.flatMap(sec=>sec.items);
-  const hdr=['Brand','Opening',...allItems,'NET CF','Closing'];
-  const rows=[hdr];
+  const rows=[['Brand','Opening',...allItems,'NET CF','Closing']];
   let portOpen=0,portClose=0;
   const portAgg={};
   allBrands.forEach(brand=>{
-    const items=(HIST.data||{})[brand]?.[month]||{};
-    // Also merge session consolidated rows for this brand+month
+    const items={...(((HIST.data||{})[brand]||{})[month]||{})};
     (S.consolidated||[]).forEach(r=>{
-      if(r.brand===brand&&r.month===month){
-        items[r.cfLine]=(items[r.cfLine]||0)+(+r.net||0);
-      }
+      if(r.brand===brand&&r.month===month) items[r.cfLine]=(items[r.cfLine]||0)+(+r.net||0);
     });
-    const hasAny=Object.values(items).some(v=>v!==0);
-    const prevMonth=Object.keys((HIST.closing||{})[brand]||{}).sort(sortM).reverse().find(m=>sortM(m,month)<0);
-    const opening=(HIST.closing||{})[brand]?.[prevMonth]||0;
     const closing=(HIST.closing||{})[brand]?.[month]||0;
-    const netCF=CF.structure.reduce((s,sec)=>s+sec.items.reduce((ss,i)=>ss+(items[i]||0),0),0);
-    if(!hasAny&&!closing) return;
-    const row=[brand,Math.round(opening),...allItems.map(i=>Math.round(items[i]||0)),Math.round(netCF),Math.round(closing)];
-    rows.push(row);
+    const netCF=CF.structure.reduce((s,sec)=>s+sec.items.reduce((ss,i)=>ss+(+items[i]||0),0),0);
+    if(!Object.keys(items).length&&!closing) return;
+    // Opening = previous month closing from HIST
+    const prevMonths=Object.keys((HIST.closing||{})[brand]||{}).filter(m=>sortM(m,month)<0).sort(sortM);
+    const prevMonth=prevMonths[prevMonths.length-1];
+    const opening=(HIST.closing||{})[brand]?.[prevMonth]||0;
+    rows.push([brand,Math.round(opening),...allItems.map(i=>Math.round(+items[i]||0)),Math.round(netCF),Math.round(closing)]);
     portOpen+=opening; portClose+=closing;
-    allItems.forEach(i=>{portAgg[i]=(portAgg[i]||0)+(items[i]||0);});
+    allItems.forEach(i=>{portAgg[i]=(portAgg[i]||0)+(+items[i]||0);});
   });
-  // Portfolio total row
   const portNet=CF.structure.reduce((s,sec)=>s+sec.items.reduce((ss,i)=>ss+(portAgg[i]||0),0),0);
   rows.push(['PORTFOLIO TOTAL',Math.round(portOpen),...allItems.map(i=>Math.round(portAgg[i]||0)),Math.round(portNet),Math.round(portClose)]);
-
   const ws=XLSX.utils.aoa_to_sheet(rows);
   ws['!cols']=[{wch:20},{wch:12},...allItems.map(()=>({wch:16})),{wch:12},{wch:12}];
   ws['!freeze']={xSplit:1,ySplit:1};
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,mLabel+' Dump');
-  XLSX.writeFile(wb,'GBL_CF_'+mLabel.replace('-','')+'_BrandDump.xlsx');
-}>
+  XLSX.writeFile(wb,`GBL_CF_${mLabel.replace('-','')}_BrandDump.xlsx`);
+}
+
+// ═══════════════════════════════════════════════════════════
+// FILTERS + NAV + UTILS
+// ═══════════════════════════════════════════════════════════
+function populateFilters(){
+  const allBrands=getAllBrands();
+  const br=['<option value="ALL">All Brands</option>',...allBrands.map(b=>`<option value="${b}">${b}</option>`)].join('');
+  ['rf-brand','wf-brand'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=br;});
+  document.getElementById('recon-brand').innerHTML=['<option value="ALL">All Brands</option>',...S.brandList.map(b=>`<option value="${b}">${b}</option>`)].join('');
+}
+
+function showPage(page){
+  ['upload','mapping','recon','checks','lineitems','corrections','closemonth','report','waterfall','brands'].forEach(p=>{
+    const pg=document.getElementById(`page-${p}`);
+    if(pg) pg.classList.toggle('hidden',p!==page);
+    const nav=document.getElementById(`nav-${p}`);
+    if(nav) nav.classList.toggle('active',p===page);
+  });
+  const titles={upload:'Upload Brand Files',mapping:'Line Item Mapping',recon:'Reconciliation vs Brand Summary',
+    checks:'Checks & IC Loans',lineitems:'Other Line Items — '+CONSOLIDATION_MONTH,
+    corrections:'Corrections & Re-upload',closemonth:'Close Month — '+CONSOLIDATION_MONTH,
+    report:'Consolidated Cash Flow Report',waterfall:'Cash Waterfall',brands:'Brand Breakdown'};
+  document.getElementById('page-title').textContent=titles[page]||page;
+  if(page==='report'){populateFilters();renderReport();const b=document.getElementById('btn-confirm-report');if(b&&S.reportConfirmed){b.textContent='✓ Report Confirmed';b.style.background='#2e7d32';b.disabled=true;}}
+  if(page==='waterfall')renderWaterfall();
+  if(page==='brands')renderBrands();
+  if(page==='recon'){renderRecon();renderConfirmPanel();}
+  if(page==='lineitems')initLineItems();
+  if(page==='corrections')renderCorrections();
+  if(page==='closemonth')renderCloseMonth();
+}
+
+function markStep(n,st){const el=document.getElementById(`step${n}`);if(!el)return;el.className=`step ${st}`;el.querySelector('.sdot').textContent=st==='done'?'✓':n;}
+
+function updateBadges(){
+  const n=Object.keys(S.brands).length;
+  const pct=Math.round(n/TARGET*100);
+  const el=id=>document.getElementById(id);
+  if(el('badge-new')){
+    el('badge-new').textContent=`${CONSOLIDATION_MONTH}: ${n} / ${TARGET}`;
+    el('badge-new').className=`badge ${n===TARGET?'bg':n>0?'bb':'ba'}`;
+  }
+  if(el('sb-foot')){
+    const _mn={1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'May',6:'Jun',7:'Jul',8:'Aug',9:'Sep',10:'Oct',11:'Nov',12:'Dec'};
+    const _fmt=m=>{const[mo,yr]=m.split('-');return _mn[+mo]+'-'+yr.slice(-2);};
+    const _ms=HIST.months||[];
+    const _histRange=_ms.length?_fmt(_ms[0])+'–'+_fmt(_ms[_ms.length-1]):'';
+    el('sb-foot').innerHTML=`Historical: ${_histRange} ✓<div class="prog-wrap"><div class="prog-bar" style="width:${pct}%"></div></div><div style="margin-top:5px">Uploads: ${n} / ${TARGET}</div>`;
+  }
+  if(el('btn-map')) el('btn-map').disabled=n===0;
+  // Update sidebar upload count with current month label
+  if(el('sb-upload-status')){
+    const _lbl=el('lbl-month-b');
+    if(_lbl) _lbl.textContent=(()=>{const MN={1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'May',6:'Jun',7:'Jul',8:'Aug',9:'Sep',10:'Oct',11:'Nov',12:'Dec'};const[mo,yr]=CONSOLIDATION_MONTH.split('-');return MN[+mo]+'-'+yr.slice(-2);})();
+    el('sb-upload-status').childNodes[1] && (el('sb-upload-status').lastChild.textContent=` uploads: ${n} / ${TARGET}`);
+  }
+}
+
+function resetNewOnly(){
+  const _ic=S.icOverrides||{};
+  S={brands:{},mapping:{},consolidated:[],months:[],brandList:[],checks:{},issues:[],recon:{},excludedBrands:[],icOverrides:_ic};
+  document.getElementById('log-body').innerHTML='';document.getElementById('log-panel').style.display='none';
+  [1,2,3,4,5].forEach(i=>markStep(i,''));markStep(1,'active');
+  renderGrid();showPage('upload');
+  const el=document.getElementById('rf-brand');if(el)el.innerHTML='<option value="ALL">All Brands</option>';
+}
+
+// ═══════════════════════════════════════════════════════════
+// AUTHORISATION
+// ═══════════════════════════════════════════════════════════
+let CFO_PIN=localStorage.getItem('gbl_cfo_pin')||'2602';
+let pendingAction=null;let isAuthorised=false;
+function requireAuth(action){
+  if(isAuthorised){action();return;}
+  pendingAction=action;
+  document.getElementById('auth-modal').classList.remove('hidden');document.getElementById('auth-modal').style.display='flex';
+  document.getElementById('auth-pin').value='';document.getElementById('auth-error').style.display='none';
+  setTimeout(()=>document.getElementById('auth-pin').focus(),100);
+}
+function verifyPin(){
+  const entered=document.getElementById('auth-pin').value;
+  if(entered===CFO_PIN){
+    document.getElementById('auth-modal').style.display='none';document.getElementById('auth-modal').classList.add('hidden');
+    isAuthorised=true;if(pendingAction){pendingAction();pendingAction=null;}
+  }else{document.getElementById('auth-error').style.display='block';document.getElementById('auth-pin').value='';document.getElementById('auth-pin').focus();}
+}
+function closeAuth(){document.getElementById('auth-modal').style.display='none';document.getElementById('auth-modal').classList.add('hidden');pendingAction=null;}
+function openSettings(){
+  requireAuth(()=>{
+    document.getElementById('settings-modal').style.display='flex';
+    document.getElementById('settings-modal').classList.remove('hidden');
+    showSavedMapCount();
+  });
+}
+function closeSettings(){document.getElementById('settings-modal').style.display='none';document.getElementById('settings-modal').classList.add('hidden');}
+function changePin(){
+  const cur=document.getElementById('cur-pin').value;const nw=document.getElementById('new-pin').value;const nw2=document.getElementById('new-pin2').value;
+  const msg=document.getElementById('settings-msg');
+  if(cur!==CFO_PIN){msg.style.color='var(--red)';msg.textContent='Current PIN incorrect.';return;}
+  if(nw.length<4||nw.length>8||!/^\d+$/.test(nw)){msg.style.color='var(--red)';msg.textContent='PIN must be 4-8 digits.';return;}
+  if(nw!==nw2){msg.style.color='var(--red)';msg.textContent='PINs do not match.';return;}
+  CFO_PIN=nw;localStorage.setItem('gbl_cfo_pin',nw);msg.style.color='var(--green)';msg.textContent='✓ PIN updated.';setTimeout(closeSettings,1500);
+}
+function clearSavedMappings(){
+  // Mappings are stored only in session snapshot — clear S.mapping and re-save
+  if(!confirm('Clear all saved brand mappings? They will need to be re-mapped on next upload.')) return;
+  const count = Object.keys(S.mapping||{}).length;
+  S.mapping = {};
+  saveSession();
+  const el=document.getElementById('saved-map-count');
+  if(el)el.textContent='✓ Cleared '+count+' brand mapping(s).';
+}
+function showSavedMapCount(){
+  const el=document.getElementById('saved-map-count');
+  if(!el)return;
+  const keys=Object.keys(localStorage).filter(k=>k.startsWith('gbl_map_'));
+  const brands=keys.map(k=>k.replace('gbl_map_',''));
+  el.textContent=keys.length>0?keys.length+' brand(s) saved: '+brands.join(', '):'No mappings saved yet.';
+}
+
+// ═══════════════════════════════════════════════════════════
+// UTILS
+// ═══════════════════════════════════════════════════════════
+function pN(v){if(v===null||v===undefined||v==='')return 0;const n=parseFloat(String(v).replace(/,/g,''));return isNaN(n)?0:n;}
+
+function normM(v){
+  if(v===null||v===undefined)return'';
+  // Duck-type Date check (avoids instanceof cross-realm issues in browsers)
+  if(v&&typeof v.getUTCMonth==='function'){
+    if(isNaN(v.getTime()))return'';
+    return(v.getUTCMonth()+1)+'-'+v.getUTCFullYear();
+  }
+  const s=String(v).trim();
+  // ISO string e.g. '2026-06-01T00:00:00.000Z' — parse date part directly
+  if(/^\d{4}-\d{2}-\d{2}/.test(s)){
+    const parts=s.substring(0,10).split('-');
+    if(parts.length===3&&parseInt(parts[0])>1990)return parseInt(parts[1])+'-'+parts[0];
+  }
+  // M-YYYY or MM-YYYY (dash)
+  if(/^\d{1,2}-\d{4}$/.test(s)){const[m,y]=s.split('-');return parseInt(m)+'-'+y;}
+  // M/YYYY or MM/YYYY (slash) — e.g. Imara format
+  if(/^\d{1,2}\/\d{4}$/.test(s)){const[m,y]=s.split('/');return parseInt(m)+'-'+y;}
+  // YYYY-M or YYYY-MM
+  if(/^\d{4}-\d{1,2}$/.test(s)){const[y,m]=s.split('-');return parseInt(m)+'-'+y;}
+  // Excel serial number
+  if(/^\d+(\.\d+)?$/.test(s)){
+    const n=parseFloat(s);
+    if(n>1000){
+      const d=new Date(Math.round((n-25569)*86400*1000));
+      if(!isNaN(d.getTime())&&d.getUTCFullYear()>1990)return(d.getUTCMonth()+1)+'-'+d.getUTCFullYear();
+    }
+  }
+  return'';
+}
+
+function sortM(a,b){const p=s=>{const[m,y]=String(s).split('-').map(Number);return(y||2000)*100+(m||1);};return p(a)-p(b);}
+function month2key(m){if(!m)return 0;const p=String(m).split('-');return parseInt(p[1]||0)*100+parseInt(p[0]||0);}
+function monthInFY(m,fy){
+  if(!fy||fy==='ALL')return true;
+  if(fy===CONSOLIDATION_MONTH)return m===CONSOLIDATION_MONTH;
+  const ranges={FY22:{f:202104,t:202203},FY23:{f:202204,t:202303},FY24:{f:202304,t:202403},FY25:{f:202404,t:202503},FY26:{f:202504,t:202603},FY27:{f:202604,t:202703}};
+  const r=ranges[fy];if(!r)return true;const k=month2key(m);return k>=r.f&&k<=r.t;
+}
+function fmtN(v){if(!v&&v!==0)return '0';return new Intl.NumberFormat('en-IN',{maximumFractionDigits:0}).format(Math.round(v));}
+function fmtCr(v){return `₹${(v/1e7).toFixed(2)} Cr`;}
+function fmtS(v){const a=Math.abs(v);return a>=1e7?`₹${(v/1e7).toFixed(1)}Cr`:a>=1e5?`₹${(v/1e5).toFixed(1)}L`:fmtN(v);}
+
+// ═══════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════
+
+init();
+populateFilters();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ROUTER — Single URL, three views
+// ═══════════════════════════════════════════════════════════════════════════
+const RT = {
+  // ── API endpoints — swap these when EC2 is ready ──────────────────────
+  API: {
+    me:     '/api/me',
+    status: '/api/upload-status',
+    upload: '/api/upload',
+    files:  '/api/get-files',
+  },
+  // ── Brand-to-email map — fill in actual emails ─────────────────────────
+  BRAND_MAP: {
+    'abhishti.finance@goatbrandlabs.com':    'Abhishti',
+    'breakbounce.finance@goatbrandlabs.com': 'Break Bounce',
+    'chumbak.finance@goatbrandlabs.com':     'Chumbak',
+    'frangipani.finance@goatbrandlabs.com':  'Frangipani',
+    'gblantares.finance@goatbrandlabs.com':  'GBL Antares',
+    'gblgarden.finance@goatbrandlabs.com':   'GBL Garden',
+    'gblindia.finance@goatbrandlabs.com':    'GBL India',
+    'gblmimosa.finance@goatbrandlabs.com':   'GBL Mimosa',
+    'gblpollux.finance@goatbrandlabs.com':   'GBL Pollux',
+    'gblsingapore.finance@goatbrandlabs.com':'GBL Singapore',
+    'gblsirius.finance@goatbrandlabs.com':   'GBL Sirius',
+    'imara.finance@goatbrandlabs.com':       'Imara',
+    'leafytales.finance@goatbrandlabs.com':  'Leafy Tales',
+    'neemli.finance@goatbrandlabs.com':      'Neemli',
+    'nutriglow.finance@goatbrandlabs.com':   'Nutriglow',
+    'petedge.finance@goatbrandlabs.com':     'Pet Edge',
+    'pepe.finance@goatbrandlabs.com':        'Pepe',
+    'tll.finance@goatbrandlabs.com':         'TLL',
+    'truebrowns.finance@goatbrandlabs.com':  'trueBrowns',
+    'voylla.finance@goatbrandlabs.com':      'Voylla',
+    'yuris.finance@goatbrandlabs.com':       'Yuris',
+    // Processor emails
+    'sangeetha.v@goatbrandlabs.com':         '__PROCESSOR__',
+    // Add second processor here when needed:
+    // 'finance2@goatbrandlabs.com': '__PROCESSOR__',
+  },
+  PROCESSOR_EMAILS: ['sangeetha.v@goatbrandlabs.com'],
+  ALL_BRANDS: ['Abhishti','Break Bounce','Chumbak','Frangipani','GBL Antares',
+    'GBL Garden','GBL India','GBL Mimosa','GBL Pollux','GBL Singapore','GBL Sirius',
+    'Imara','Leafy Tales','Neemli','Nutriglow','Pet Edge','Pepe','TLL',
+    'trueBrowns','Voylla','Yuris'],
+  user: null,
+  loadedFiles: [],
+  statusData: {},
+  selectedFile: null,
+};
+
+// ── Show/hide pages ───────────────────────────────────────────────────────
+function rtShowPage(page) {
+  ['pg-login','pg-upload','pg-processor'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('active', false);
+  });
+  // CFF tool = remove all overlays (show the underlying dashboard)
+  if (page === 'cff') return;
+  const el = document.getElementById('pg-' + page);
+  if (el) el.classList.add('active');
+}
+
+// ── Init: check login state ───────────────────────────────────────────────
+async function rtInit() {
+  try {
+    const res  = await fetch(RT.API.me, {credentials:'include'});
+    const user = await res.json();
+    RT.user = user;
+    if (user.role === 'processor') {
+      document.getElementById('rt-proc-email').textContent = user.email;
+      rtShowPage('processor');
+      rtRefreshStatus();
+    } else if (user.role === 'brand') {
+      document.getElementById('rt-user-email').textContent = user.email;
+      document.getElementById('rt-brand-name').textContent = user.brand;
+      document.getElementById('rt-month-chip').textContent = CONSOLIDATION_MONTH;
+      rtShowPage('upload');
+      rtLoadUploadHistory();
+    } else {
+      rtShowPage('login');
+    }
+  } catch(e) {
+    // No backend yet — show CFF dashboard directly (current behaviour)
+    // Comment this out once EC2 is ready and uncomment rtShowPage('login')
+    rtShowPage('cff');
+    // rtShowPage('login');
+  }
+}
+
+// ── UPLOAD PAGE ───────────────────────────────────────────────────────────
+function rtDrop(e) {
+  e.preventDefault();
+  document.getElementById('rt-dz').classList.remove('drag');
+  rtFile(e.dataTransfer.files[0]);
+}
+function rtFile(f) {
+  if (!f) return;
+  if (!/\.(xlsx|xls|xlsb)$/i.test(f.name)) {
+    rtStatus('Please select an Excel file (.xlsx / .xls / .xlsb)', 'err'); return;
+  }
+  RT.selectedFile = f;
+  document.getElementById('rt-dz').classList.add('ready');
+  document.getElementById('rt-dz-icon').textContent  = '✅';
+  document.getElementById('rt-dz-label').textContent = 'File selected';
+  document.getElementById('rt-dz-hint').textContent  = '';
+  document.getElementById('rt-dz-fname').textContent = f.name;
+  document.getElementById('rt-ubtn').disabled = false;
+  rtStatus('','');
+}
+async function rtUpload() {
+  if (!RT.selectedFile) return;
+  const btn = document.getElementById('rt-ubtn');
+  btn.disabled = true; btn.textContent = 'Uploading...';
+  rtStatus('<span class="spin"></span> Uploading to Google Drive — please wait...', 'wait');
+  try {
+    const fd = new FormData();
+    fd.append('file', RT.selectedFile);
+    const d = await (await fetch(RT.API.upload,{method:'POST',body:fd,credentials:'include'})).json();
+    if (d.success) {
+      rtStatus(`✓ Uploaded as <strong>${d.fileName}</strong><br>Finance team has been notified.`, 'ok');
+      btn.textContent = '✓ Uploaded';
+      RT.selectedFile = null;
+      document.getElementById('rt-dz').className = 'dropzone';
+      document.getElementById('rt-dz-icon').textContent  = '📂';
+      document.getElementById('rt-dz-label').textContent = 'Drop file here or click to browse';
+      document.getElementById('rt-dz-hint').textContent  = 'Accepts .xlsx · .xls · .xlsb';
+      document.getElementById('rt-dz-fname').textContent = '';
+      document.getElementById('rt-fi').value = '';
+      rtLoadUploadHistory();
+    } else throw new Error(d.error || 'Upload failed');
+  } catch(e) {
+    rtStatus('Upload failed: ' + e.message, 'err');
+    btn.disabled = false; btn.textContent = 'Upload File';
+  }
+}
+function rtStatus(html, type) {
+  const el = document.getElementById('rt-sbox');
+  el.innerHTML = html;
+  el.className = 'sbox' + (type ? ' ' + type : '');
+}
+async function rtLoadUploadHistory() {
+  try {
+    const s = await (await fetch(RT.API.status,{credentials:'include'})).json();
+    const brand = RT.user?.brand;
+    const info  = s.uploaded?.[brand];
+    if (info) {
+      document.getElementById('rt-prev').style.display = '';
+      document.getElementById('rt-prev-list').innerHTML =
+        `<div class="prev-item"><span>${info.fileName}<span class="v-tag">V${info.version}</span></span>
+         <span style="color:#7a7a8a">${info.date}</span></div>`;
+    }
+  } catch(e) {}
+}
+
+// ── PROCESSOR PAGE ────────────────────────────────────────────────────────
+async function rtRefreshStatus() {
+  document.getElementById('rt-refresh-time').textContent = 'Refreshing...';
+  try {
+    const data = await (await fetch(RT.API.status,{credentials:'include'})).json();
+    RT.statusData = data;
+    rtRenderStatus(data);
+  } catch(e) {
+    rtRenderStatus({month: CONSOLIDATION_MONTH, uploaded:{}, total:21});
+  }
+  document.getElementById('rt-refresh-time').textContent =
+    'Updated ' + new Date().toLocaleTimeString('en-IN');
+}
+function rtRenderStatus(data) {
+  const {month, uploaded={}, total=21} = data;
+  const upCount = Object.keys(uploaded).length;
+  const missing = total - upCount;
+  const pct = Math.round(upCount/total*100);
+  document.getElementById('rt-k-month').textContent = month;
+  document.getElementById('rt-k-up').textContent    = upCount;
+  document.getElementById('rt-k-miss').textContent  = missing;
+  document.getElementById('rt-ph-month').textContent = month;
+  document.getElementById('rt-prog').style.width = pct + '%';
+  const st = document.getElementById('rt-k-status');
+  if (missing===0){st.textContent='✅ All uploaded';st.style.color='#1a7a4a';}
+  else if(missing<=3){st.textContent='⚠ Almost ready';st.style.color='#b7600d';}
+  else{st.textContent='⏳ Waiting';st.style.color='#c0392b';}
+  document.getElementById('rt-brand-grid').innerHTML = RT.ALL_BRANDS.map(brand => {
+    const info = uploaded[brand];
+    return info
+      ? `<div class="bc up"><div class="bc-name">✓ ${brand}</div>
+         <div class="bc-st">V${info.version} uploaded</div>
+         <div class="bc-meta">${info.date} · ${Math.round(info.size/1024)}KB</div></div>`
+      : `<div class="bc miss"><div class="bc-name">${brand}</div>
+         <div class="bc-st">Not uploaded</div></div>`;
+  }).join('');
+}
+async function rtLoadFiles() {
+  const btn = document.getElementById('rt-s1-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span>Loading...';
+  document.getElementById('rt-s1-desc').textContent = 'Fetching brand files from Google Drive...';
+  try {
+    const files = await (await fetch(RT.API.files,{credentials:'include'})).json();
+    RT.loadedFiles = files;
+    document.getElementById('rt-s1-num').className = 'step-num done';
+    document.getElementById('rt-s1-num').textContent = '✓';
+    btn.textContent = `✓ ${files.length} files loaded`;
+    document.getElementById('rt-s1-desc').textContent =
+      `${files.length} brand files ready`;
+    document.getElementById('rt-s2-num').className = 'step-num';
+    document.getElementById('rt-s2-btn').disabled = false;
+  } catch(e) {
+    document.getElementById('rt-s1-desc').textContent = 'Error: ' + e.message;
+    btn.disabled = false; btn.textContent = 'Retry';
+  }
+}
+function rtOpenCFF() {
+  rtShowPage('cff');
+  // Post files into the CFF tool
+  if (RT.loadedFiles.length) {
+    setTimeout(() => {
+      window.postMessage({type:'GBL_CFF_LOAD_FILES', files:RT.loadedFiles}, '*');
+    }, 500);
+  }
+}
+
+// Start router
+rtInit();
+
+</script>
+
+
+<!-- CFO Auth Modal -->
+<div id="auth-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:12px;padding:32px;max-width:360px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+    <div style="font-size:16px;font-weight:700;margin-bottom:6px;">🔒 CFO Authorisation Required</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:20px;">Only the Finance Controller can finalise consolidation.</div>
+    <input type="password" id="auth-pin" placeholder="Enter your PIN" maxlength="8"
+      style="width:100%;border:2px solid var(--rule);border-radius:6px;padding:10px 14px;font-size:14px;margin-bottom:12px;outline:none;font-family:'Times New Roman',Times,serif;"
+      onkeydown="if(event.key==='Enter')verifyPin()">
+    <div id="auth-error" style="font-size:12px;color:var(--red);margin-bottom:10px;display:none;">Incorrect PIN. Try again.</div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-o" style="flex:1" onclick="closeAuth()">Cancel</button>
+      <button class="btn btn-p" style="flex:1" onclick="verifyPin()">Authorise →</button>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:14px;text-align:center;">Default PIN: <strong>2602</strong></div>
+  </div>
+</div>
+
+<!-- CFO Settings Modal -->
+<div id="settings-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:12px;padding:32px;max-width:360px;width:90%;">
+    <div style="font-size:16px;font-weight:700;margin-bottom:16px;">🔒 Change CFO PIN</div>
+    <input type="password" id="cur-pin" placeholder="Current PIN" style="width:100%;border:2px solid var(--rule);border-radius:6px;padding:9px 12px;font-size:13px;margin-bottom:10px;font-family:'Times New Roman',Times,serif;">
+    <input type="password" id="new-pin" placeholder="New PIN (4-8 digits)" style="width:100%;border:2px solid var(--rule);border-radius:6px;padding:9px 12px;font-size:13px;margin-bottom:10px;font-family:'Times New Roman',Times,serif;">
+    <input type="password" id="new-pin2" placeholder="Confirm new PIN" style="width:100%;border:2px solid var(--rule);border-radius:6px;padding:9px 12px;font-size:13px;margin-bottom:12px;font-family:'Times New Roman',Times,serif;">
+    <div id="settings-msg" style="font-size:12px;margin-bottom:10px;"></div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-o" style="flex:1" onclick="closeSettings()">Cancel</button>
+      <button class="btn btn-p" style="flex:1" onclick="changePin()">Update PIN</button>
+    </div>
+    <div style="margin-top:16px;border-top:1px solid var(--rule);padding-top:14px;">
+      <div style="font-size:12px;font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);">Saved Mappings</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Grouping → CF line mappings are saved per brand and auto-applied on next upload.</div>
+      <div id="saved-map-count" style="font-size:12px;margin-bottom:10px;"></div>
+      <button class="btn btn-sm btn-d" onclick="clearSavedMappings()">Clear All Saved Mappings</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

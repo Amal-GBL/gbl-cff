@@ -1696,6 +1696,7 @@ async function parseFile(file){
 
     // ── Parse rows — accept ALL months ──────────────────────
     const rows=[];
+    const closingRows=[]; // bank balance rows (Net=0, Bank Bal INR populated)
     const monthCounts={};
     for(let i=hdr+1;i<raw.length;i++){
       const row=raw[i]||[];
@@ -1711,7 +1712,24 @@ async function parseFile(file){
       let netVal=inf-out;
       if(inf===0&&out===0&&iNET>=0){
         netVal=pN(row[iNET]);
-        if(netVal===0) continue; // genuinely zero, skip
+        if(netVal===0){
+          // Could be a bank balance row — check if Bank Bal (INR) is populated
+          const balVal=iBALINR>=0?pN(row[iBALINR]):0;
+          const grpStr=String(grp||'').trim();
+          const BTYPES_SET=new Set(['Cash','Bank Accounts','Deposits','Deposits - Sing','Mutual Fund','OD']);
+          if(balVal!==0&&BTYPES_SET.has(grpStr)){
+            // Store as a closing balance row
+            const bankName=iBANK>=0?String(row[iBANK]||'').trim():'';
+            const rawDate=iDATE>=0?row[iDATE]:null;
+            let ds='';
+            if(rawDate){
+              if(typeof rawDate.getUTCMonth==='function') ds=rawDate.toISOString().substring(0,10);
+              else if(typeof rawDate==='number'&&rawDate>1000) ds=new Date(Math.round((rawDate-25569)*86400*1000)).toISOString().substring(0,10);
+            }
+            closingRows.push({brand,month,grouping:grpStr,bank:bankName,date:ds,balINR:balVal});
+          }
+          continue;
+        }
       } else if(inf===0&&out===0) continue;
       monthCounts[month]=(monthCounts[month]||0)+1;
       const rawDate=iDATE>=0?row[iDATE]:null;
@@ -1784,7 +1802,7 @@ async function parseFile(file){
     const effectiveMonths = summaryLatest && !allMonths.includes(summaryLatest)
       ? [...allMonths, summaryLatest].sort(sortM) : allMonths;
     S.brands[brand]={
-      rows, brandSummary, hasSummary,
+      rows, closingRows, brandSummary, hasSummary,
       filename:file.name,
       fresh:true,  // uploaded this session (not from restore)
       months:effectiveMonths.length,
@@ -3613,16 +3631,27 @@ function exportJuneDump(){
         r.invBrand||'', r.activity||'', r.type||'', r.netUSD||''
       ]);
     });
-    // Closing balance rows from brandSummary
+    // Closing balance rows — account-level from parsed bank balance rows (closingRows)
+    // Falls back to type-level totals from brandSummary if closingRows not available
     const brandsDone=[...new Set(sorted.map(r=>r.brand))].sort();
     brandsDone.forEach(brand=>{
       const bdKey=Object.keys(S.brands||{}).find(k=>k===brand||k.startsWith(brand+'__dup__'))||brand;
-      const bs=((S.brands||{})[bdKey]?.brandSummary||{})[month]||{};
-      BTYPES.forEach(btype=>{
-        const val=bs[btype];
-        if(val===undefined||val===null) return;
-        rows.push([brand,month,btype,'','','','Closing Balance','','','','',Math.round(val),'','Closing Balance','','']);
-      });
+      const bd=(S.brands||{})[bdKey];
+      const acctRows=(bd?.closingRows||[]).filter(r=>r.month===month);
+      if(acctRows.length){
+        // Account-level: Brand | Month | Grouping | BANK=account | ... | Bank Bal (INR)
+        acctRows.forEach(r=>{
+          rows.push([brand,month,r.grouping,r.bank,'','','Closing Balance','','','','',Math.round(r.balINR),'','Closing Balance','','']);
+        });
+      } else {
+        // Fallback: type totals from brandSummary
+        const bs=(bd?.brandSummary||{})[month]||{};
+        BTYPES.forEach(btype=>{
+          const val=bs[btype];
+          if(val===undefined||val===null) return;
+          rows.push([brand,month,btype,'','','','Closing Balance','','','','',Math.round(val),'','Closing Balance','','']);
+        });
+      }
     });
   } else {
     // Baked historical month — HIST only has cfLine aggregates, not transaction rows

@@ -3554,36 +3554,23 @@ function exportExcel(){
 
 // ── Export 2: Current month Cash Data dump (matches source Cash Data format) ───
 function exportJuneDump(){
-  // Get selected month from dropdown (falls back to CONSOLIDATION_MONTH)
   const sel=document.getElementById('dump-month-sel');
   const month=sel?sel.value:CONSOLIDATION_MONTH;
   const MN={1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'May',6:'Jun',7:'Jul',8:'Aug',9:'Sep',10:'Oct',11:'Nov',12:'Dec'};
   const[mo,yr]=month.split('-');
   const mLabel=MN[+mo]+'-'+yr.slice(-2);
+  const isCurrent=month===CONSOLIDATION_MONTH;
 
-  const isCurrent = month===CONSOLIDATION_MONTH;
-
-  // Activity lookup covering all cfLines
-  const actOf=cf=>{
-    for(const sec of CF.structure){ if(sec.items.includes(cf)) return sec.section; }
-    return cf||'';
-  };
-
-  const wb=XLSX.utils.book_new();
-
-  // ── Build transaction rows ─────────────────────────────────────────────────
-  // For current month: use S.consolidated
-  // For historical months: reconstruct from HIST.data (brand→month→cfLine→net)
-  // HIST.data is aggregated (one net per cfLine per brand per month) — no GL/Bank/Particulars
-  const hdr=['Brand','Month','Grouping','BANK','GL','Date','Particulars','Inflow','Outflow','Net','Bank Bal (INR-USD)','Bank Bal (INR)','Activity','CF Line'];
+  // Headers: exact Cash Data format + Activity column
+  const hdr=['Brand','Month','Grouping','BANK','GL','Date','Particulars','Inflow','Outflow','Net','Bank Bal (INR-USD)','Bank Bal (INR)','Activity'];
   const rows=[hdr];
   const BTYPES=['Cash','Bank Accounts','Deposits','Deposits - Sing','Mutual Fund','OD'];
 
+  // ── Transaction rows ───────────────────────────────────────────────────────
   if(isCurrent){
-    // Current month — full transaction detail from S.consolidated
     const txRows=(S.consolidated||[]).filter(r=>r.month===month);
     if(!txRows.length){
-      alert('No uploaded data for '+mLabel+' in this session.\n\nUpload brand files first, then export.');
+      alert('No uploaded data for '+mLabel+'.\n\nUpload brand files first, then export.');
       return;
     }
     const sorted=[...txRows].sort((a,b)=>a.brand!==b.brand?a.brand.localeCompare(b.brand):(a.cfLine||'').localeCompare(b.cfLine||''));
@@ -3591,7 +3578,7 @@ function exportJuneDump(){
       const net=+r.net||0;
       const inf=net>0?Math.round(net):(r.inflow>0?Math.round(r.inflow):'');
       const out=net<0?Math.round(Math.abs(net)):(r.outflow<0?Math.round(Math.abs(r.outflow)):'');
-      rows.push([r.brand||'',r.month||'',r.grouping||r.cfLine||'',r.bank||'',r.gl||'',r.date||'',r.particulars||'',inf,out,Math.round(net),'','',actOf(r.cfLine),r.cfLine||'']);
+      rows.push([r.brand||'',r.month||'',r.grouping||r.cfLine||'',r.bank||'',r.gl||'',r.date||'',r.particulars||'',inf,out,Math.round(net),'','',net>=0?'Receipts':'Payments']);
     });
     // Closing balance rows from brandSummary
     const brandsDone=[...new Set(sorted.map(r=>r.brand))].sort();
@@ -3601,83 +3588,40 @@ function exportJuneDump(){
       BTYPES.forEach(btype=>{
         const val=bs[btype];
         if(val===undefined||val===null) return;
-        rows.push([brand,month,btype,'','','','','','','','',Math.round(val),'Closing Balance',btype]);
+        rows.push([brand,month,btype,'','','','Closing Balance','','','','',Math.round(val),'Closing Balance']);
       });
-      const total=+bs['Closing Cash & Cash Equivalents']||0;
-      if(total) rows.push([brand,month,'Closing Balance','','','','','','','','',Math.round(total),'Closing Balance','Total']);
     });
   } else {
-    // Historical month — from HIST.data (aggregated; no GL/Bank/Particulars detail)
+    // Historical month from HIST.data
     const histBrands=Object.keys(HIST.data||{}).sort();
     let hasAny=false;
     histBrands.forEach(brand=>{
       const lines=(HIST.data||{})[brand]?.[month]||{};
       if(!Object.keys(lines).length) return;
       hasAny=true;
-      // Sort by cfLine
       Object.entries(lines).sort(([a],[b])=>a.localeCompare(b)).forEach(([cfLine,d])=>{
         const net=typeof d==='object'&&d!==null?(+d.net||0):(+d||0);
         if(!net) return;
         const inf=net>0?Math.round(net):'';
         const out=net<0?Math.round(Math.abs(net)):'';
-        rows.push([brand,month,cfLine,'','','','[aggregated]',inf,out,Math.round(net),'','',actOf(cfLine),cfLine]);
+        rows.push([brand,month,cfLine,'','','','[aggregated]',inf,out,Math.round(net),'','',net>=0?'Receipts':'Payments']);
       });
-      // Closing balance from HIST.closing + HIST.breakdown
+      // Closing balance rows from HIST.breakdown
       BTYPES.forEach(btype=>{
         const val=(HIST.breakdown||{})[brand]?.[month]?.[btype];
         if(val===undefined||val===null) return;
-        rows.push([brand,month,btype,'','','','','','','','',Math.round(val),'Closing Balance',btype]);
+        rows.push([brand,month,btype,'','','','Closing Balance','','','','',Math.round(val),'Closing Balance']);
       });
-      const total=(HIST.closing||{})[brand]?.[month];
-      if(total) rows.push([brand,month,'Closing Balance','','','','','','','','',Math.round(total),'Closing Balance','Total']);
     });
-    if(!hasAny){
-      alert('No data found for '+mLabel+' in historical records.');
-      return;
-    }
+    if(!hasAny){alert('No data found for '+mLabel+' in historical records.');return;}
   }
 
   const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:18},{wch:10},{wch:26},{wch:26},{wch:26},{wch:13},{wch:38},{wch:13},{wch:13},{wch:13},{wch:16},{wch:16},{wch:22},{wch:30}];
+  ws['!cols']=[{wch:18},{wch:10},{wch:28},{wch:28},{wch:28},{wch:13},{wch:40},{wch:13},{wch:13},{wch:13},{wch:15},{wch:15},{wch:13}];
   ws['!freeze']={xSplit:0,ySplit:1};
-  ws['!autofilter']={ref:`A1:N${rows.length}`};
+  ws['!autofilter']={ref:`A1:M${rows.length}`};
+  const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,mLabel+' Cash Data');
-
-  // ── Closing summary sheet ──────────────────────────────────────────────────
-  const sumHdr=['Brand','Month','Opening','Cash','Bank Accounts','Deposits','Deposits - Sing','Mutual Fund','OD','Total Closing','Net CF'];
-  const sumRows=[sumHdr];
-  const allBrands=isCurrent
-    ? [...new Set((S.consolidated||[]).filter(r=>r.month===month).map(r=>r.brand))].sort()
-    : Object.keys(HIST.data||{}).filter(b=>(HIST.data||{})[b]?.[month]).sort();
-  let portClose=0,portOpen=0,portNet=0;
-  allBrands.forEach(brand=>{
-    let closing=0,opening=0,netCF=0;
-    const btVals=BTYPES.map(()=>0);
-    if(isCurrent){
-      const bdKey=Object.keys(S.brands||{}).find(k=>k===brand||k.startsWith(brand+'__dup__'))||brand;
-      const bs=((S.brands||{})[bdKey]?.brandSummary||{})[month]||{};
-      closing=+bs['Closing Cash & Cash Equivalents']||0;
-      opening=+bs['Opening Cash & Cash Equivalents']||0;
-      netCF=(S.consolidated||[]).filter(r=>r.brand===brand&&r.month===month).reduce((a,r)=>a+(+r.net||0),0);
-      BTYPES.forEach((t,i)=>{btVals[i]=Math.round(bs[t]||0);});
-    } else {
-      closing=(HIST.closing||{})[brand]?.[month]||0;
-      const lines=(HIST.data||{})[brand]?.[month]||{};
-      netCF=Object.values(lines).reduce((a,d)=>a+(typeof d==='object'&&d!==null?(+d.net||0):(+d||0)),0);
-      // Opening = prev month closing
-      const prevMs=Object.keys((HIST.closing||{})[brand]||{}).filter(m=>sortM(m,month)<0).sort(sortM);
-      opening=(HIST.closing||{})[brand]?.[prevMs[prevMs.length-1]]||0;
-      BTYPES.forEach((t,i)=>{btVals[i]=Math.round((HIST.breakdown||{})[brand]?.[month]?.[t]||0);});
-    }
-    sumRows.push([brand,month,Math.round(opening),...btVals,Math.round(closing),Math.round(netCF)]);
-    portClose+=closing; portOpen+=opening; portNet+=netCF;
-  });
-  sumRows.push(['PORTFOLIO TOTAL',month,Math.round(portOpen),...BTYPES.map(()=>0),Math.round(portClose),Math.round(portNet)]);
-  const ws2=XLSX.utils.aoa_to_sheet(sumRows);
-  ws2['!cols']=[{wch:20},{wch:10},{wch:14},...BTYPES.map(()=>({wch:16})),{wch:16},{wch:14}];
-  ws2['!freeze']={xSplit:0,ySplit:1};
-  XLSX.utils.book_append_sheet(wb,ws2,mLabel+' Closing Summary');
-
   XLSX.writeFile(wb,`GBL_CashData_${mLabel.replace('-','')}.xlsx`);
 }
 

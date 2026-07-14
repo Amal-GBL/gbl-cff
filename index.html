@@ -438,7 +438,7 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
 
   </div>
   <div class="sb-foot" id="sb-foot" style="cursor:default">
-    Historical: Jun-21 → May-26 ✓
+    Historical: Jun-21–Jun-26 ✓
     <div class="prog-wrap"><div class="prog-bar" id="prog" style="width:0%"></div></div>
     <div style="margin-top:5px;" id="sb-upload-status"><span id="lbl-month-b">Jun-26</span> uploads: 0 / 21</div>
     <div id="gh-sync-status" style="margin-top:6px;font-size:10px;color:#a0b4c8;"></div>
@@ -449,7 +449,7 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
   <div class="topbar">
     <div class="topbar-title" id="page-title">Upload <span id="lbl-month-a">Jun-26</span> Brand Files</div>
     <div class="topbar-meta">
-      <span id="badge-hist" class="badge bg">FY22–May26 loaded ✓</span>
+      <span id="badge-hist" class="badge bg">Jun-21–Jun-26 loaded ✓</span>
       <span id="badge-new" class="badge ba"><span id="lbl-month-c">Jun-26</span>: 0 / 21</span>
       <button class="btn btn-sm btn-o" onclick="resetNewOnly()">↺ Reset <span id="lbl-month-d">Jun-26</span></button>
     </div>
@@ -3413,8 +3413,20 @@ function updateBadges(){
     el('badge-new').textContent=`${CONSOLIDATION_MONTH}: ${n} / ${TARGET}`;
     el('badge-new').className=`badge ${n===TARGET?'bg':n>0?'bb':'ba'}`;
   }
-  if(el('sb-foot')) el('sb-foot').innerHTML=`Historical: Jun-21 → May-26 ✓<div class="prog-wrap"><div class="prog-bar" style="width:${pct}%"></div></div><div style="margin-top:5px">Uploads: ${n} / ${TARGET}</div>`;
+  if(el('sb-foot')){
+    const _mn={1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'May',6:'Jun',7:'Jul',8:'Aug',9:'Sep',10:'Oct',11:'Nov',12:'Dec'};
+    const _fmt=m=>{const[mo,yr]=m.split('-');return _mn[+mo]+'-'+yr.slice(-2);};
+    const _ms=HIST.months||[];
+    const _histRange=_ms.length?_fmt(_ms[0])+'–'+_fmt(_ms[_ms.length-1]):'';
+    el('sb-foot').innerHTML=`Historical: ${_histRange} ✓<div class="prog-wrap"><div class="prog-bar" style="width:${pct}%"></div></div><div style="margin-top:5px">Uploads: ${n} / ${TARGET}</div>`;
+  }
   if(el('btn-map')) el('btn-map').disabled=n===0;
+  // Update sidebar upload count with current month label
+  if(el('sb-upload-status')){
+    const _lbl=el('lbl-month-b');
+    if(_lbl) _lbl.textContent=(()=>{const MN={1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'May',6:'Jun',7:'Jul',8:'Aug',9:'Sep',10:'Oct',11:'Nov',12:'Dec'};const[mo,yr]=CONSOLIDATION_MONTH.split('-');return MN[+mo]+'-'+yr.slice(-2);})();
+    el('sb-upload-status').childNodes[1] && (el('sb-upload-status').lastChild.textContent=` uploads: ${n} / ${TARGET}`);
+  }
 }
 
 function resetNewOnly(){

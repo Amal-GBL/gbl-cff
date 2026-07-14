@@ -1385,14 +1385,22 @@ function updateMonthLabels(){
 function populateDumpMonths(){
   const sel=document.getElementById('dump-month-sel');
   if(!sel) return;
-  // All available months: HIST months + current consolidation month
   const MN={1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'May',6:'Jun',7:'Jul',8:'Aug',9:'Sep',10:'Oct',11:'Nov',12:'Dec'};
   const fmtM=m=>{const[mo,yr]=m.split('-');return MN[+mo]+'-'+yr.slice(-2);};
-  const months=[...(HIST.months||[])].sort(sortM).reverse(); // newest first
-  // Also include CONSOLIDATION_MONTH if not already in HIST
-  if(!months.includes(CONSOLIDATION_MONTH)) months.unshift(CONSOLIDATION_MONTH);
-  sel.innerHTML=months.map(m=>`<option value="${m}">${fmtM(m)}${m===CONSOLIDATION_MONTH?' (current)':''}</option>`).join('');
-  // Default to most recent month
+  // Only show months from Jun-26 onwards — that's when tool-level transaction detail exists
+  // Earlier months in HIST are aggregated cfLine totals only, not transaction rows
+  const FIRST_TOOL_MONTH='6-2026';
+  const months=[];
+  // Add CONSOLIDATION_MONTH (current) first
+  months.push(CONSOLIDATION_MONTH);
+  // Add any session months already baked (from HIST months >= FIRST_TOOL_MONTH)
+  (HIST.months||[]).filter(m=>sortM(m,FIRST_TOOL_MONTH)>=0&&m!==CONSOLIDATION_MONTH)
+    .sort(sortM).reverse().forEach(m=>months.push(m));
+  sel.innerHTML=months.map(m=>{
+    const isCurr=m===CONSOLIDATION_MONTH;
+    const label=fmtM(m)+(isCurr?' (current — upload first)':' (baked)');
+    return `<option value="${m}">${label}</option>`;
+  }).join('');
   if(months.length) sel.value=months[0];
 }
 
@@ -3610,27 +3618,9 @@ function exportJuneDump(){
       });
     });
   } else {
-    // Historical month: aggregated from HIST.data (no transaction detail available)
-    const histBrands=Object.keys(HIST.data||{}).sort();
-    let hasAny=false;
-    histBrands.forEach(brand=>{
-      const lines=(HIST.data||{})[brand]?.[month]||{};
-      if(!Object.keys(lines).length) return;
-      hasAny=true;
-      Object.entries(lines).sort(([a],[b])=>a.localeCompare(b)).forEach(([cfLine,d])=>{
-        const net=typeof d==='object'&&d!==null?(+d.net||0):(+d||0);
-        if(!net) return;
-        const inf=net>0?Math.round(net):'';
-        const out=net<0?Math.round(Math.abs(net)):'';
-        rows.push([brand,month,cfLine,'','','','[aggregated]',inf,out,Math.round(net),'','','','','','']);
-      });
-      BTYPES.forEach(btype=>{
-        const val=(HIST.breakdown||{})[brand]?.[month]?.[btype];
-        if(val===undefined||val===null) return;
-        rows.push([brand,month,btype,'','','','Closing Balance','','','','',Math.round(val),'','Closing Balance','','']);
-      });
-    });
-    if(!hasAny){alert('No data found for '+mLabel+'.');return;}
+    // Baked historical month — HIST only has cfLine aggregates, not transaction rows
+    alert(`"${mLabel}" was already baked.\n\nTransaction-level detail (BANK, GL, Date, Particulars) is not available in the tool for baked months — only cfLine totals are stored in HIST.\n\nFor Jun-26: use the pre-generated file provided separately.\nFor future months: download before baking.`);
+    return;
   }
 
   const ws=XLSX.utils.aoa_to_sheet(rows);

@@ -618,8 +618,7 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
         <select id="rf-brand" class="fsel" onchange="renderReport()" style="margin-left:auto;"></select>
         <button class="btn btn-sm btn-p" onclick="confirmReport()" id="btn-confirm-report" title="Mark report as reviewed and ready to close">✓ Confirm Report</button>
         <button class="btn btn-sm btn-s" onclick="exportExcel()">⬇ CF Export</button>
-        <select id="dump-month-sel" class="fsel" style="font-size:11px;padding:3px 6px;height:28px;"></select>
-        <button class="btn btn-sm btn-s" onclick="exportJuneDump()">⬇ Cash Data Dump</button>
+        <button class="btn btn-sm btn-s" id="btn-cash-dump" onclick="exportJuneDump()" style="display:none">⬇ Download Cash Data</button>
       </div>
 
       <div class="panel">
@@ -1311,6 +1310,11 @@ async function checkForSavedSession(){
         const banner=document.getElementById('session-banner');
         if(banner) banner.style.display='none';
         setSyncBadge('☁ Session restored', '#1565c0');
+        // Show cash dump button if report was already confirmed in this session
+        if(snap.reportConfirmed){
+          const dl=document.getElementById('btn-cash-dump');
+          if(dl) dl.style.display='';
+        }
         // Re-render corrections page if it's open
         const corrPage = document.getElementById('page-corrections');
         if(corrPage && !corrPage.classList.contains('hidden')) renderCorrections();
@@ -3392,6 +3396,9 @@ function confirmReport(){
   saveSession();
   const b = document.getElementById('btn-confirm-report');
   if(b){ b.textContent = '✓ Report Confirmed'; b.style.background = '#2e7d32'; b.disabled = true; }
+  // Reveal the Cash Data download button — available after confirm, before bake
+  const dl = document.getElementById('btn-cash-dump');
+  if(dl) dl.style.display = '';
   setSyncBadge('✓ Report confirmed', '#2e7d32');
 }
 

@@ -3543,98 +3543,110 @@ function exportJuneDump(){
   const[mo,yr]=month.split('-');
   const mLabel=MN[+mo]+'-'+yr.slice(-2);
 
-  // Collect rows from S.consolidated for current month
   const txRows=(S.consolidated||[]).filter(r=>r.month===month);
-
   if(!txRows.length){
     alert('No uploaded data for '+mLabel+' in this session.\n\nUpload brand files first, then export.');
     return;
   }
 
+  // Activity lookup — covers all cfLines including structural ones
+  const actOf=cf=>{
+    for(const sec of CF.structure){ if(sec.items.includes(cf)) return sec.section; }
+    return cf||'';  // fallback to cfLine itself
+  };
+
   const wb=XLSX.utils.book_new();
 
-  // ── Sheet 1: Transaction rows (Cash Data format) ──────────────────────────
-  // Exact columns: Brand | Month | Grouping | BANK | GL | Date | Particulars | Inflow | Outflow | Net | Bank Bal (INR-USD) | Bank Bal (INR) | Activity | CF Line
+  // ── Sheet 1: Cash Data (transaction rows + closing balance rows) ──────────
+  // Columns match source Cash Data sheet exactly
   const hdr=['Brand','Month','Grouping','BANK','GL','Date','Particulars','Inflow','Outflow','Net','Bank Bal (INR-USD)','Bank Bal (INR)','Activity','CF Line'];
   const rows=[hdr];
 
+  // Transaction rows sorted by Brand → cfLine
   const sorted=[...txRows].sort((a,b)=>{
     if(a.brand!==b.brand) return a.brand.localeCompare(b.brand);
     return (a.cfLine||'').localeCompare(b.cfLine||'');
   });
 
   sorted.forEach(r=>{
-    const inflow  = r.net>0 ? Math.round(r.net) : (r.inflow>0 ? Math.round(r.inflow) : '');
-    const outflow = r.net<0 ? Math.round(Math.abs(r.net)) : (r.outflow<0 ? Math.round(Math.abs(r.outflow)) : '');
+    const net=+r.net||0;
+    const inf=net>0 ? Math.round(net) : (r.inflow>0 ? Math.round(r.inflow) : '');
+    const out=net<0 ? Math.round(Math.abs(net)) : (r.outflow<0 ? Math.round(Math.abs(r.outflow)) : '');
     rows.push([
       r.brand||'',
       r.month||'',
-      r.grouping||r.cfLine||'',   // original grouping from file
+      r.grouping||r.cfLine||'',
       r.bank||'',
       r.gl||'',
       r.date||'',
       r.particulars||'',
-      inflow,
-      outflow,
-      Math.round(r.net||0),
-      '',                          // Bank Bal (INR-USD) — not in row level
-      '',                          // Bank Bal (INR) — not in row level
-      r.activity||'',             // Activity (Operations/Investing/Financing)
-      r.cfLine||'',               // Mapped CF Line
+      inf,
+      out,
+      Math.round(net),
+      '',                            // Bank Bal (INR-USD) — per-transaction balance not stored
+      '',                            // Bank Bal (INR)     — per-transaction balance not stored
+      actOf(r.cfLine),              // Activity (Operations/Investing/Financing)
+      r.cfLine||'',                 // CF Line (mapped)
     ]);
   });
 
-  // ── Add bank balance closing rows per brand (from brandSummary) ──────────
+  // ── Closing balance rows from brandSummary (bank-type breakdown) ──────────
+  // These appear as separate rows at end of each brand — just like source Cash Data sheet
   const BTYPES=['Cash','Bank Accounts','Deposits','Deposits - Sing','Mutual Fund','OD'];
-  Object.entries(S.brands||{}).forEach(([k,bd])=>{
-    const brand=k.replace(/__dup__\w+$/,'');
-    const bs=(bd.brandSummary||{})[month];
-    if(!bs) return;
+  const brandsDone=new Set();
+  sorted.forEach(r=>brandsDone.add(r.brand));  // maintain same brand order
+  [...brandsDone].sort().forEach(brand=>{
+    // Find S.brands entry (may have __dup__ suffix)
+    const bdKey=Object.keys(S.brands||{}).find(k=>k===brand||k.startsWith(brand+'__dup__'))||brand;
+    const bs=((S.brands||{})[bdKey]?.brandSummary||{})[month]||{};
     BTYPES.forEach(btype=>{
       const val=bs[btype];
-      if(!val&&val!==0) return;
+      if(val===undefined||val===null) return;
       rows.push([
-        brand, month, btype, '', '', '', 'Closing Balance',
-        '', '', '',
+        brand, month, btype, '', '', '', '',
+        '', '', '',                  // Inflow / Outflow / Net
         '',
-        Math.round(val),  // Bank Bal (INR)
+        Math.round(val),             // Bank Bal (INR) ← closing balance by type
         'Closing Balance', btype
       ]);
     });
+    // Total closing
+    const total=+bs['Closing Cash & Cash Equivalents']||0;
+    if(total) rows.push([brand,month,'Closing Balance','','','','','','','','',Math.round(total),'Closing Balance','Total']);
   });
 
   const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:18},{wch:10},{wch:32},{wch:28},{wch:28},{wch:14},{wch:40},{wch:14},{wch:14},{wch:14},{wch:16},{wch:16},{wch:16},{wch:32}];
+  ws['!cols']=[{wch:18},{wch:10},{wch:26},{wch:26},{wch:26},{wch:13},{wch:38},{wch:13},{wch:13},{wch:13},{wch:16},{wch:16},{wch:22},{wch:30}];
   ws['!freeze']={xSplit:0,ySplit:1};
   ws['!autofilter']={ref:`A1:N${rows.length}`};
   XLSX.utils.book_append_sheet(wb,ws,mLabel+' Cash Data');
 
-  // ── Sheet 2: Brand-wise closing balance summary ───────────────────────────
-  const sumHdr=['Brand','Month','Opening','Cash','Bank Accounts','Deposits','Deposits - Sing','Mutual Fund','OD','Total Closing','Net CF'];
+  // ── Sheet 2: Closing summary by brand ─────────────────────────────────────
+  const sumHdr=['Brand','Month','Opening','Cash','Bank Accounts','Deposits','Deposits - Sing','Mutual Fund','OD','Total Closing','Net CF','Check'];
   const sumRows=[sumHdr];
-  let portClose=0,portOpen=0;
-  const allBrands=[...new Set(txRows.map(r=>r.brand))].sort();
+  const allBrands=[...brandsDone].sort();
+  let portClose=0,portOpen=0,portNet=0;
   allBrands.forEach(brand=>{
-    const bd=S.brands[brand]||S.brands[Object.keys(S.brands).find(k=>k.startsWith(brand))||'']||{};
-    const bs=(bd.brandSummary||{})[month]||{};
+    const bdKey=Object.keys(S.brands||{}).find(k=>k===brand||k.startsWith(brand+'__dup__'))||brand;
+    const bs=((S.brands||{})[bdKey]?.brandSummary||{})[month]||{};
     const closing=+bs['Closing Cash & Cash Equivalents']||0;
     const opening=+bs['Opening Cash & Cash Equivalents']||0;
     const netCF=txRows.filter(r=>r.brand===brand).reduce((a,r)=>a+(+r.net||0),0);
-    const row=[brand,month,Math.round(opening),
-      ...BTYPES.map(t=>Math.round(bs[t]||0)),
-      Math.round(closing),Math.round(netCF)];
-    sumRows.push(row);
-    portClose+=closing; portOpen+=opening;
+    const check=closing-opening-netCF;
+    sumRows.push([brand,month,Math.round(opening),...BTYPES.map(t=>Math.round(bs[t]||0)),Math.round(closing),Math.round(netCF),Math.round(check)]);
+    portClose+=closing; portOpen+=opening; portNet+=netCF;
   });
-  const portNetCF=txRows.reduce((a,r)=>a+(+r.net||0),0);
-  sumRows.push(['PORTFOLIO TOTAL',month,Math.round(portOpen),...BTYPES.map(()=>0),Math.round(portClose),Math.round(portNetCF)]);
+  sumRows.push(['PORTFOLIO TOTAL',month,Math.round(portOpen),...BTYPES.map(()=>0),Math.round(portClose),Math.round(portNet),Math.round(portClose-portOpen-portNet)]);
   const ws2=XLSX.utils.aoa_to_sheet(sumRows);
-  ws2['!cols']=[{wch:20},{wch:10},{wch:14},...BTYPES.map(()=>({wch:16})),{wch:16},{wch:14}];
+  ws2['!cols']=[{wch:20},{wch:10},{wch:14},...BTYPES.map(()=>({wch:16})),{wch:16},{wch:14},{wch:12}];
   ws2['!freeze']={xSplit:0,ySplit:1};
   XLSX.utils.book_append_sheet(wb,ws2,mLabel+' Closing Summary');
 
   XLSX.writeFile(wb,`GBL_CashData_${mLabel.replace('-','')}.xlsx`);
 }
+
+
+
 
 
 // ═══════════════════════════════════════════════════════════

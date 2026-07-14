@@ -3536,42 +3536,62 @@ function exportExcel(){
   XLSX.writeFile(wb,`GBL_CashFlow_${fyFilter}.xlsx`);
 }
 
-// ── Export 2: Current month brand-wise dump ───────────────────────────────────
+// ── Export 2: Current month Cash Data dump (matches source Cash Data format) ───
 function exportJuneDump(){
   const month=CONSOLIDATION_MONTH;
   const MN={1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'May',6:'Jun',7:'Jul',8:'Aug',9:'Sep',10:'Oct',11:'Nov',12:'Dec'};
   const[mo,yr]=month.split('-');
   const mLabel=MN[+mo]+'-'+yr.slice(-2);
-  const allBrands=[...new Set([...Object.keys(HIST.data||{}),...(S.brandList||[])])].sort();
-  const allItems=CF.structure.flatMap(sec=>sec.items);
-  const rows=[['Brand','Opening',...allItems,'NET CF','Closing']];
-  let portOpen=0,portClose=0;
-  const portAgg={};
-  allBrands.forEach(brand=>{
-    const items={...(((HIST.data||{})[brand]||{})[month]||{})};
-    (S.consolidated||[]).forEach(r=>{
-      if(r.brand===brand&&r.month===month) items[r.cfLine]=(items[r.cfLine]||0)+(+r.net||0);
-    });
-    const closing=(HIST.closing||{})[brand]?.[month]||0;
-    const netCF=CF.structure.reduce((s,sec)=>s+sec.items.reduce((ss,i)=>ss+(+items[i]||0),0),0);
-    if(!Object.keys(items).length&&!closing) return;
-    // Opening = previous month closing from HIST
-    const prevMonths=Object.keys((HIST.closing||{})[brand]||{}).filter(m=>sortM(m,month)<0).sort(sortM);
-    const prevMonth=prevMonths[prevMonths.length-1];
-    const opening=(HIST.closing||{})[brand]?.[prevMonth]||0;
-    rows.push([brand,Math.round(opening),...allItems.map(i=>Math.round(+items[i]||0)),Math.round(netCF),Math.round(closing)]);
-    portOpen+=opening; portClose+=closing;
-    allItems.forEach(i=>{portAgg[i]=(portAgg[i]||0)+(+items[i]||0);});
+
+  // Collect rows from S.consolidated (uploaded this session) for current month
+  const txRows=(S.consolidated||[]).filter(r=>r.month===month);
+
+  if(!txRows.length){
+    alert('No uploaded data for '+mLabel+' in this session.\n\nUpload brand files first, then export.');
+    return;
+  }
+
+  // Headers matching Cash Data format
+  const hdr=['Brand','Month','Grouping','BANK','GL','Date','Particulars','Inflow','Outflow','Net','Bank Bal (INR-USD)','Bank Bal (INR)'];
+  const rows=[hdr];
+
+  // Sort: Brand → Grouping → Net desc
+  const sorted=[...txRows].sort((a,b)=>{
+    if(a.brand!==b.brand) return a.brand.localeCompare(b.brand);
+    if((a.cfLine||'')!==(b.cfLine||'')) return (a.cfLine||'').localeCompare(b.cfLine||'');
+    return 0;
   });
-  const portNet=CF.structure.reduce((s,sec)=>s+sec.items.reduce((ss,i)=>ss+(portAgg[i]||0),0),0);
-  rows.push(['PORTFOLIO TOTAL',Math.round(portOpen),...allItems.map(i=>Math.round(portAgg[i]||0)),Math.round(portNet),Math.round(portClose)]);
+
+  sorted.forEach(r=>{
+    const inflow  = r.inflow  && r.inflow>0  ? Math.round(r.inflow)  : (r.net>0 ? Math.round(r.net) : '');
+    const outflow = r.outflow && r.outflow<0  ? Math.round(Math.abs(r.outflow)) : (r.net<0 ? Math.round(Math.abs(r.net)) : '');
+    const net     = Math.round(r.net||0);
+    rows.push([
+      r.brand||'',         // Brand
+      r.month||'',         // Month
+      r.cfLine||'',        // Grouping (mapped CF line)
+      r.bank||'',          // BANK (if available)
+      r.gl||'',            // GL (if available)
+      r.date||'',          // Date (if available)
+      r.particulars||r.description||'', // Particulars
+      inflow,              // Inflow
+      outflow,             // Outflow
+      net,                 // Net
+      '',                  // Bank Bal (INR-USD)
+      '',                  // Bank Bal (INR)
+    ]);
+  });
+
   const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:20},{wch:12},...allItems.map(()=>({wch:16})),{wch:12},{wch:12}];
-  ws['!freeze']={xSplit:1,ySplit:1};
+  ws['!cols']=[{wch:18},{wch:10},{wch:32},{wch:28},{wch:28},{wch:14},{wch:40},{wch:14},{wch:14},{wch:14},{wch:16},{wch:16}];
+  ws['!freeze']={xSplit:0,ySplit:1};
+  // Auto-filter on header row
+  ws['!autofilter']={ref:`A1:L${rows.length}`};
   const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,mLabel+' Dump');
-  XLSX.writeFile(wb,`GBL_CF_${mLabel.replace('-','')}_BrandDump.xlsx`);
+  XLSX.utils.book_append_sheet(wb,ws,mLabel+' Cash Data');
+  XLSX.writeFile(wb,`GBL_CashData_${mLabel.replace('-','')}_${month}.xlsx`);
 }
+
 
 // ═══════════════════════════════════════════════════════════
 // FILTERS + NAV + UTILS

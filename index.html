@@ -752,12 +752,14 @@ const HIST ={"brands":["Abhishti","Frangipani","GBL Garden","GBL India","GBL Sin
 // GITHUB SESSION SYNC CONFIG
 // ═══════════════════════════════════════════════════════════
 const GH_SYNC = {
-  token:  ['ghp_3rUT7VmbOtu','ooNHkTYfNRkKd3Q5R32UcR3L'].join('m'),
   repo:   'Amal-GBL/gbl-cff',
   branch: 'dev',
   file:   'session.json',
   mapFile:'mapping.json'
 };
+// Requests go through a same-origin proxy that holds the GitHub token
+// server-side, instead of embedding it in this client-side file.
+const GH_API_BASE = '/cff/api/gh';
 
 const CONSOLIDATION_MONTH = '7-2026';  // Format: M-YYYY
 
@@ -1025,8 +1027,8 @@ async function removeFromConsolidation(brand){
 
 async function loadMappingFromGitHub(){
   try{
-    const hdrs={'Authorization':`Bearer ${GH_SYNC.token}`,'Accept':'application/vnd.github+json'};
-    const base=`https://api.github.com/repos/${GH_SYNC.repo}`;
+    const hdrs={'Accept':'application/vnd.github+json'};
+    const base = GH_API_BASE;
     const refR=await fetch(`${base}/git/ref/heads/${GH_SYNC.branch}`,{headers:hdrs});
     if(!refR.ok) return;
     const refSha=(await refR.json()).object.sha;
@@ -1054,8 +1056,8 @@ async function loadMappingFromGitHub(){
 async function pushMappingAndSession(snapshot){
   // ATOMIC: push mapping.json + session.json in ONE commit — zero race conditions
   try{
-    const hdrs={'Authorization':`Bearer ${GH_SYNC.token}`,'Accept':'application/vnd.github+json','Content-Type':'application/json'};
-    const base=`https://api.github.com/repos/${GH_SYNC.repo}`;
+    const hdrs={'Accept':'application/vnd.github+json','Content-Type':'application/json'};
+    const base = GH_API_BASE;
 
     // Build clean mapping (strip __dup__ keys and null values)
     const clean={};
@@ -1176,10 +1178,9 @@ async function fetchSessionFromGitHub(){
   try{
     // Always fetch from GitHub blob API — avoids EC2 serving stale cached session.json
     const hdrs = {
-      'Authorization': `Bearer ${GH_SYNC.token}`,
       'Accept': 'application/vnd.github+json'
     };
-    const base = `https://api.github.com/repos/${GH_SYNC.repo}`;
+    const base = GH_API_BASE;
     const refR = await fetch(`${base}/git/ref/heads/${GH_SYNC.branch}`, {headers:hdrs});
     if(!refR.ok) return null;
     const refSha = (await refR.json()).object.sha;
@@ -1192,7 +1193,7 @@ async function fetchSessionFromGitHub(){
     const entry = tree.tree.find(t => t.path === GH_SYNC.file);
     if(!entry) return null;
     const blobR = await fetch(`${base}/git/blobs/${entry.sha}`, {
-      headers: {'Authorization': `Bearer ${GH_SYNC.token}`, 'Accept': 'application/vnd.github+json'}
+      headers: {'Accept': 'application/vnd.github+json'}
     });
     if(!blobR.ok) return null;
     const blob = await blobR.json();
@@ -1256,11 +1257,10 @@ function clearSession(){
 async function deleteSessionFromGitHub(){
   try{
     const hdrs = {
-      'Authorization': `Bearer ${GH_SYNC.token}`,
       'Accept': 'application/vnd.github+json',
       'Content-Type': 'application/json'
     };
-    const base = `https://api.github.com/repos/${GH_SYNC.repo}`;
+    const base = GH_API_BASE;
 
     // Get current HEAD — use git tree to find session.json blob SHA
     const refR = await fetch(`${base}/git/ref/heads/${GH_SYNC.branch}`, {headers:hdrs});
@@ -3104,8 +3104,8 @@ async function bakeInMonth(){
   // Push to GitHub dev branch index.html using blob API (supports large files)
   setSyncBadge('⟳ Pushing to GitHub...', '#555');
   try{
-    const hdrs = {'Authorization':`Bearer ${GH_SYNC.token}`,'Accept':'application/vnd.github+json','Content-Type':'application/json'};
-    const base = `https://api.github.com/repos/${GH_SYNC.repo}`;
+    const hdrs = {'Accept':'application/vnd.github+json','Content-Type':'application/json'};
+    const base = GH_API_BASE;
     const b64  = btoa(unescape(encodeURIComponent(src)));
 
     // Step 1: Create blob

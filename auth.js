@@ -24,9 +24,10 @@ document.addEventListener('DOMContentLoaded', function () {
   // role: 'view' or 'edit'. brands: array of allowed brand names, or null for all brands.
   // 'edit' can Consolidate/Bake In/open Settings; 'view' can only browse the dashboard.
   var USER_ACCESS = {
-    'amal.bobby@goatbrandlabs.com':   { role: 'edit', brands: null },
-    'sangeetha.v@goatbrandlabs.com':  { role: 'edit', brands: null },
-    'analytics@goatbrandlabs.com':    { role: 'view', brands: null },
+    'sangeetha.v@goatbrandlabs.com':     { role: 'edit', brands: null },
+    'anshuman.khanna@goatbrandlabs.com': { role: 'edit', brands: null },
+    'amal.bobby@goatbrandlabs.com':      { role: 'view', brands: null },
+    'analytics@goatbrandlabs.com':       { role: 'view', brands: null },
   };
 
   // ── Inject overlay CSS ────────────────────────────────────────────────────

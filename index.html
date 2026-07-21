@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GBL Cash Flow Consolidation — FY27 | v09-Jul-2026 09:07</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="auth.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 :root{
   --ink:#1a1a2e;--paper:#f8f7f4;--rule:#e0ddd6;
@@ -452,6 +454,7 @@ body{font-family:'Times New Roman',Times,serif;background:var(--paper);color:var
       <span id="badge-hist" class="badge bg">Jun-21–Jun-26 loaded ✓</span>
       <span id="badge-new" class="badge ba"><span id="lbl-month-c">Jun-26</span>: 0 / 21</span>
       <button class="btn btn-sm btn-o" onclick="resetNewOnly()">↺ Reset <span id="lbl-month-d">Jun-26</span></button>
+      <div id="gbl-user-slot"></div>
     </div>
   </div>
 
@@ -3741,23 +3744,16 @@ function resetNewOnly(){
 // ═══════════════════════════════════════════════════════════
 // AUTHORISATION
 // ═══════════════════════════════════════════════════════════
-let CFO_PIN=localStorage.getItem('gbl_cfo_pin')||'2602';
-let pendingAction=null;let isAuthorised=false;
+// Edit access is granted per Google account in auth.js's USER_ACCESS map —
+// see window.gblCurrentAccess, set after sign-in.
 function requireAuth(action){
-  if(isAuthorised){action();return;}
-  pendingAction=action;
+  const access=window.gblCurrentAccess;
+  if(access&&access.role==='edit'){action();return;}
+  const emailEl=document.getElementById('auth-denied-email');
+  if(emailEl)emailEl.textContent=(window.gblCurrentUser&&window.gblCurrentUser.email)||'';
   document.getElementById('auth-modal').classList.remove('hidden');document.getElementById('auth-modal').style.display='flex';
-  document.getElementById('auth-pin').value='';document.getElementById('auth-error').style.display='none';
-  setTimeout(()=>document.getElementById('auth-pin').focus(),100);
 }
-function verifyPin(){
-  const entered=document.getElementById('auth-pin').value;
-  if(entered===CFO_PIN){
-    document.getElementById('auth-modal').style.display='none';document.getElementById('auth-modal').classList.add('hidden');
-    isAuthorised=true;if(pendingAction){pendingAction();pendingAction=null;}
-  }else{document.getElementById('auth-error').style.display='block';document.getElementById('auth-pin').value='';document.getElementById('auth-pin').focus();}
-}
-function closeAuth(){document.getElementById('auth-modal').style.display='none';document.getElementById('auth-modal').classList.add('hidden');pendingAction=null;}
+function closeAuth(){document.getElementById('auth-modal').style.display='none';document.getElementById('auth-modal').classList.add('hidden');}
 function openSettings(){
   requireAuth(()=>{
     document.getElementById('settings-modal').style.display='flex';
@@ -3766,14 +3762,6 @@ function openSettings(){
   });
 }
 function closeSettings(){document.getElementById('settings-modal').style.display='none';document.getElementById('settings-modal').classList.add('hidden');}
-function changePin(){
-  const cur=document.getElementById('cur-pin').value;const nw=document.getElementById('new-pin').value;const nw2=document.getElementById('new-pin2').value;
-  const msg=document.getElementById('settings-msg');
-  if(cur!==CFO_PIN){msg.style.color='var(--red)';msg.textContent='Current PIN incorrect.';return;}
-  if(nw.length<4||nw.length>8||!/^\d+$/.test(nw)){msg.style.color='var(--red)';msg.textContent='PIN must be 4-8 digits.';return;}
-  if(nw!==nw2){msg.style.color='var(--red)';msg.textContent='PINs do not match.';return;}
-  CFO_PIN=nw;localStorage.setItem('gbl_cfo_pin',nw);msg.style.color='var(--green)';msg.textContent='✓ PIN updated.';setTimeout(closeSettings,1500);
-}
 function clearSavedMappings(){
   // Mappings are stored only in session snapshot — clear S.mapping and re-save
   if(!confirm('Clear all saved brand mappings? They will need to be re-mapped on next upload.')) return;
@@ -3844,6 +3832,16 @@ function fmtS(v){const a=Math.abs(v);return a>=1e7?`₹${(v/1e7).toFixed(1)}Cr`:
 
 init();
 populateFilters();
+
+// Called by auth.js right after Google sign-in succeeds — greys out
+// edit-only actions for view-role users so requireAuth()'s denial modal
+// isn't the first they hear of it.
+window.gblApplyAccess = function(access){
+  if(!access||access.role==='edit')return;
+  document.querySelectorAll('.btn-p[onclick^="requireAuth("]').forEach(btn=>{
+    btn.style.opacity='.5';btn.title='View-only access — contact the Finance Controller to edit.';
+  });
+};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ROUTER — Single URL, three views
@@ -4075,37 +4073,22 @@ rtInit();
 <!-- CFO Auth Modal -->
 <div id="auth-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999;align-items:center;justify-content:center;">
   <div style="background:#fff;border-radius:12px;padding:32px;max-width:360px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.3);">
-    <div style="font-size:16px;font-weight:700;margin-bottom:6px;">🔒 CFO Authorisation Required</div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:20px;">Only the Finance Controller can finalise consolidation.</div>
-    <input type="password" id="auth-pin" placeholder="Enter your PIN" maxlength="8"
-      style="width:100%;border:2px solid var(--rule);border-radius:6px;padding:10px 14px;font-size:14px;margin-bottom:12px;outline:none;font-family:'Times New Roman',Times,serif;"
-      onkeydown="if(event.key==='Enter')verifyPin()">
-    <div id="auth-error" style="font-size:12px;color:var(--red);margin-bottom:10px;display:none;">Incorrect PIN. Try again.</div>
-    <div style="display:flex;gap:8px;">
-      <button class="btn btn-o" style="flex:1" onclick="closeAuth()">Cancel</button>
-      <button class="btn btn-p" style="flex:1" onclick="verifyPin()">Authorise →</button>
-    </div>
-    <div style="font-size:11px;color:var(--muted);margin-top:14px;text-align:center;">Default PIN: <strong>2602</strong></div>
+    <div style="font-size:16px;font-weight:700;margin-bottom:6px;">🔒 Edit Access Required</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:20px;">Your account (<strong id="auth-denied-email"></strong>) has view-only access. Contact the Finance Controller if you need edit access.</div>
+    <button class="btn btn-p" style="width:100%" onclick="closeAuth()">OK</button>
   </div>
 </div>
 
 <!-- CFO Settings Modal -->
 <div id="settings-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999;align-items:center;justify-content:center;">
   <div style="background:#fff;border-radius:12px;padding:32px;max-width:360px;width:90%;">
-    <div style="font-size:16px;font-weight:700;margin-bottom:16px;">🔒 Change CFO PIN</div>
-    <input type="password" id="cur-pin" placeholder="Current PIN" style="width:100%;border:2px solid var(--rule);border-radius:6px;padding:9px 12px;font-size:13px;margin-bottom:10px;font-family:'Times New Roman',Times,serif;">
-    <input type="password" id="new-pin" placeholder="New PIN (4-8 digits)" style="width:100%;border:2px solid var(--rule);border-radius:6px;padding:9px 12px;font-size:13px;margin-bottom:10px;font-family:'Times New Roman',Times,serif;">
-    <input type="password" id="new-pin2" placeholder="Confirm new PIN" style="width:100%;border:2px solid var(--rule);border-radius:6px;padding:9px 12px;font-size:13px;margin-bottom:12px;font-family:'Times New Roman',Times,serif;">
-    <div id="settings-msg" style="font-size:12px;margin-bottom:10px;"></div>
-    <div style="display:flex;gap:8px;">
-      <button class="btn btn-o" style="flex:1" onclick="closeSettings()">Cancel</button>
-      <button class="btn btn-p" style="flex:1" onclick="changePin()">Update PIN</button>
-    </div>
+    <div style="font-size:16px;font-weight:700;margin-bottom:16px;">⚙ Settings</div>
+    <div style="font-size:12px;font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);">Saved Mappings</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Grouping → CF line mappings are saved per brand and auto-applied on next upload.</div>
+    <div id="saved-map-count" style="font-size:12px;margin-bottom:10px;"></div>
+    <button class="btn btn-sm btn-d" onclick="clearSavedMappings()">Clear All Saved Mappings</button>
     <div style="margin-top:16px;border-top:1px solid var(--rule);padding-top:14px;">
-      <div style="font-size:12px;font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);">Saved Mappings</div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Grouping → CF line mappings are saved per brand and auto-applied on next upload.</div>
-      <div id="saved-map-count" style="font-size:12px;margin-bottom:10px;"></div>
-      <button class="btn btn-sm btn-d" onclick="clearSavedMappings()">Clear All Saved Mappings</button>
+      <button class="btn btn-o" style="width:100%" onclick="closeSettings()">Close</button>
     </div>
   </div>
 </div>
